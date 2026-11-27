@@ -1,0 +1,94 @@
+﻿GSC - RAPPORT D'IMPORT DU FICHIER SUIVI_COURRIER.xlsx
+Mode : IMPORT REEL
+Genere le 20/11/2026 08:24
+
+Courriers a importer : 33560
+Par annee : 2025 = 11563, 2026 = 21997
+Par statut : CLOTURE = 18358, EN_COURS = 10912, TRANSMIS = 3943, TRAITE = 195, ENREGISTRE = 152
+Par service : SINISTRES_ET_CONTENTIEUX = 32977, RESSOURCES_HUMAINES = 106, AFFAIRES_GENERALES = 106, COMMERCIAL = 73, DG = 70, (aucun) = 59, DF = 56, PRODUCTION = 56, COMPTABILITE = 52, INFORMATIQUE = 5
+
+Services du fichier : DG, DGA_CM, DGA_SP, DF, COMPTABILITE, SINISTRES_ET_CONTENTIEUX, INFORMATIQUE, PRODUCTION, COMMERCIAL, AFFAIRES_GENERALES, RESSOURCES_HUMAINES
+Categories : 34 natures frequentes (>= 100 courriers) couvrent 18367 courriers ; les 15086 autres iront en 'AUTRE'
+
+Responsables (>= 200 courriers ou seul du service) : ABDEL, BAHEL Franck, BOUM Christine, BOUMTJE Etienne, EBOBISSE MURIELLE, KOUOMEKEU Blaise, MENGUE Viviane, MINTOU Dadier, MOUTAPAM Jean, NGAMBONO Axel, NGOLLE Samuel, NJOCK Elie, TCHAMENI Aurelien
+Personnel autorise par service (liste deroulante) :
+  - DG : 0 personne(s)
+  - DGA_CM : 0 personne(s)
+  - DGA_SP : 0 personne(s)
+  - DF : 0 personne(s)
+  - COMPTABILITE : 1 personne(s)
+  - SINISTRES_ET_CONTENTIEUX : 19 personne(s)
+  - INFORMATIQUE : 1 personne(s)
+  - PRODUCTION : 1 personne(s)
+  - COMMERCIAL : 0 personne(s)
+  - AFFAIRES_GENERALES : 1 personne(s)
+  - RESSOURCES_HUMAINES : 1 personne(s)
+
+Noms regroupes (variantes d'ecriture) :
+  - 'NGO MINYEM YOLANDE' -> NGO MINYEM Yollande (1393 fois)
+  - 'ABANGA Sylvain Sylvain' -> ABANGA Sylvain (10 fois)
+  - 'MOUTAPAM Jean Jean' -> MOUTAPAM Jean (4 fois)
+  - 'ABANGA Sylvain SYLVAIN' -> ABANGA Sylvain (1 fois)
+  - 'NGO MINYEM' -> NGO MINYEM Yollande (1 fois)
+
+Personnes absentes de l'onglet Parametres (un compte sera cree) :
+  - NINTEDEM Patricia
+
+ANOMALIES DU FICHIER
+  Nom attendu, date ou nombre trouve (ignore) : 5
+      ligne 1085, RESPONSABLE SERVICE : datetime.datetime(2025, 11, 19, 0, 0)
+      ligne 1177, REAFFECTATION REDACTEUR FINAL : datetime.datetime(2025, 12, 1, 0, 0)
+      ligne 20384, RESPONSABLE SERVICE : datetime.datetime(2026, 5, 27, 0, 0)
+      ligne 23523, REAFFECTATION REDACTEUR FINAL : datetime.datetime(2026, 7, 14, 0, 0)
+      ligne 31533, REAFFECTATION REDACTEUR FINAL : datetime.datetime(2026, 10, 26, 0, 0)
+  Nom attendu, service trouve (ignore) : 3
+      ligne 13223, RESPONSABLE SERVICE : 'DGA_CM'
+      ligne 13224, RESPONSABLE SERVICE : 'DGA_CM'
+      ligne 14395, RESPONSABLE SERVICE : 'DGA_CM'
+  Date dans le futur (conservee) : 4
+      ligne 162, DATE EXECUTION : 2027-07-16
+      ligne 5724, DATE EXECUTION : 2027-07-10
+      ligne 8544, DATE EXECUTION : 2029-01-29
+      ligne 23830, DATE EXECUTION : 2028-08-03
+  Date hors plage 2000-2100 (ignoree) : 2
+      ligne 1740, DATE RECEPTION / DEPARTEMENT : 1932-10-21
+      ligne 3182, DATE RECEPTION / DEPARTEMENT : 1932-10-21
+  Date de reception absente (date de repli utilisee) : 7
+      ligne 2547
+      ligne 4123
+      ligne 4124
+      ligne 6155
+      ligne 6217
+      ligne 13019
+      ligne 30592
+  Date illisible (ignoree) : 68
+      ligne 2569, DATE TRAITEMENT : 'CNCC '
+      ligne 2569, DATE EXECUTION : 'DOS SANTE '
+      ligne 3787, DATE EXECUTION : '03/07/205'
+      ligne 4348, DATE TRAITEMENT : 'ACCUSE DE RECEPTION'
+      ligne 4349, DATE TRAITEMENT : 'NOTE TECHNIQUE'
+      ligne 5742, DATE EXECUTION : 'FACTURES PAYEES'
+      ligne 7229, DATE TRAITEMENT : 'demande de chèque pour règlement honoraires avocat'
+      ligne 7229, DATE EXECUTION : 'OUI'
+      ... et 60 autres
+  Execution OUI/NON invalide (ignoree) : 17
+      ligne 3935 : 'LT/CP01-VE/032026/000162'
+      ligne 11763 : 'TRANS FACT DE REMB '
+      ligne 12485 : '  '
+      ligne 17098 : datetime.datetime(2026, 6, 27, 0, 0)
+      ligne 18929 : ' '
+      ligne 20541 : datetime.datetime(2026, 6, 2, 0, 0)
+      ligne 20543 : datetime.datetime(2026, 6, 2, 0, 0)
+      ligne 20832 : 'IUI'
+      ... et 9 autres
+  Service de destination inconnu (courrier sans service) : 37
+      ligne 9399 : 'DGA CM'
+      ligne 13957 : 'DIRECTION GENERALE'
+      ligne 13973 : 'DGA CM'
+      ligne 13975 : 'DGA CM'
+      ligne 13993 : 'DGA CM'
+      ligne 13997 : 'AKWA'
+      ligne 14016 : 'DAF '
+      ligne 14046 : 'DGA -CM'
+      ... et 29 autres
+Courriers importes : 33560

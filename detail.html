@@ -1,0 +1,536 @@
+
+{% extends "base.html" %}
+{% load gsc_acces %}
+
+{% block title %}{{ courrier.reference }} - GSC{% endblock %}
+
+{% block content %}
+{% bandeau_acces %}
+
+<div class="container-fluid px-0">
+
+    <!-- EN-TETE -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="badge bg-primary">DETAIL DU COURRIER</span>
+
+                {% if courrier.sens == "ENTRANT" %}
+                    <span class="badge bg-info text-dark">Entrant</span>
+                {% else %}
+                    <span class="badge bg-success">Sortant</span>
+                {% endif %}
+
+                {% if courrier.get_confidentialite_display %}
+                    <span class="badge bg-warning text-dark">
+                        {{ courrier.get_confidentialite_display }}
+                    </span>
+                {% endif %}
+            </div>
+
+            <h3 class="fw-bold mb-1">{{ courrier.reference }}</h3>
+
+            {% if peut_voir_contenu %}
+                <p class="text-secondary mb-0">{{ courrier.objet }}</p>
+            {% else %}
+                <p class="text-secondary mb-0">
+                    Courrier à accès restreint. Les informations détaillées ne sont pas accessibles avec votre profil.
+                </p>
+            {% endif %}
+        </div>
+
+        <a href="{% url 'liste_courriers' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>
+            Retour au registre
+        </a>
+    </div>
+
+    <!-- ACTIONS -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="fw-bold mb-0">
+                <i class="bi bi-lightning-charge me-2 text-primary"></i>
+                Actions disponibles
+            </h6>
+        </div>
+
+        <div class="card-body d-flex flex-wrap gap-2">
+
+            {% if peut_modifier %}
+                <a href="{% url 'modifier_courrier' courrier.pk %}" class="btn btn-primary">
+                    <i class="bi bi-pencil-square me-1"></i>
+                    Modifier
+                </a>
+            {% endif %}
+
+            {% if peut_transmettre %}
+                <a href="{% url 'transmettre_courrier' courrier.pk %}" class="btn btn-success">
+                    <i class="bi bi-send me-1"></i>
+                    Transmettre
+                </a>
+            {% endif %}
+
+            {% if peut_confirmer_reception %}
+                <form method="post"
+                      action="{% url 'confirmer_reception' courrier.pk %}"
+                      class="d-inline"
+                      onsubmit="return confirm('Confirmez-vous la réception de ce courrier par votre service ?');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle me-1"></i>
+                        Confirmer la réception
+                    </button>
+                </form>
+            {% endif %}
+
+            {% if peut_affecter_agent %}
+                <a href="{% url 'affecter_agent' courrier.pk %}" class="btn btn-info text-dark">
+                    <i class="bi bi-person-plus me-1"></i>
+                    Affecter à un agent
+                </a>
+            {% endif %}
+
+            {% if peut_traiter %}
+                <a href="{% url 'traiter_courrier' courrier.pk %}" class="btn btn-warning">
+                    <i class="bi bi-pencil me-1"></i>
+                    Mettre à jour le traitement
+                </a>
+            {% endif %}
+
+            {% if peut_retourner %}
+                <a href="{% url 'retourner_courrier' courrier.pk %}" class="btn btn-outline-danger">
+                    <i class="bi bi-arrow-return-left me-1"></i>
+                    Retourner au Secrétariat
+                </a>
+            {% endif %}
+
+            {% if peut_cloturer %}
+                <a href="{% url 'cloturer_courrier' courrier.pk %}" class="btn btn-dark">
+                    <i class="bi bi-lock me-1"></i>
+                    Clôturer
+                </a>
+            {% endif %}
+
+            {% if peut_reouvrir %}
+                <a href="{% url 'reouvrir_courrier' courrier.pk %}" class="btn btn-outline-warning">
+                    <i class="bi bi-unlock me-1"></i>
+                    Réouvrir
+                </a>
+            {% endif %}
+
+            {% if peut_ajouter_piece_jointe %}
+                <a href="{% url 'ajouter_piece_jointe' courrier.pk %}" class="btn btn-outline-primary">
+                    <i class="bi bi-paperclip me-1"></i>
+                    Ajouter une pièce jointe
+                </a>
+            {% endif %}
+
+            {% if not peut_modifier and not peut_transmettre and not peut_confirmer_reception and not peut_affecter_agent and not peut_traiter and not peut_retourner and not peut_cloturer and not peut_reouvrir and not peut_ajouter_piece_jointe %}
+                <span class="text-secondary small">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Aucune action disponible pour votre profil sur ce courrier.
+                </span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- INFORMATIONS GENERALES -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="fw-bold mb-0">
+                <i class="bi bi-info-circle me-2 text-primary"></i>
+                Informations générales
+            </h6>
+        </div>
+
+        <div class="card-body">
+            <div class="row">
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Référence</small>
+                    <p class="fw-bold mb-0">{{ courrier.reference }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Sens du courrier</small>
+                    <p class="mb-0">{{ courrier.get_sens_display }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Statut actuel</small>
+                    <p class="mb-0">
+                        {% if courrier.statut == "ENREGISTRE" %}
+                            <span class="badge bg-secondary">Enregistré</span>
+                        {% elif courrier.statut == "TRANSMIS" %}
+                            <span class="badge bg-primary">Transmis</span>
+                        {% elif courrier.statut == "EN_COURS" %}
+                            <span class="badge bg-info text-dark">En cours</span>
+                        {% elif courrier.statut == "EN_ATTENTE" %}
+                            <span class="badge bg-warning text-dark">En attente</span>
+                        {% elif courrier.statut == "TRAITE" %}
+                            <span class="badge bg-success">Traité</span>
+                        {% elif courrier.statut == "CLOTURE" %}
+                            <span class="badge bg-dark">Clôturé</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ courrier.get_statut_display }}</span>
+                        {% endif %}
+                    </p>
+                </div>
+
+                {% if peut_voir_contenu %}
+
+                    <div class="col-12 col-md-4 mb-3">
+                        <small class="text-secondary">Date du courrier</small>
+                        <p class="mb-0">{{ courrier.date_courrier|date:"d/m/Y"|default:"—" }}</p>
+                    </div>
+
+                    <div class="col-12 col-md-4 mb-3">
+                        <small class="text-secondary">Date de réception / expédition</small>
+                        <p class="mb-0">{{ courrier.date_reception_expedition|date:"d/m/Y"|default:"—" }}</p>
+                    </div>
+
+                    <div class="col-12 col-md-4 mb-3">
+                        <small class="text-secondary">Date de réception physique</small>
+                        <p class="mb-0">
+                            {{ courrier.date_reception_physique|date:"d/m/Y H:i"|default:"Non renseignée" }}
+                        </p>
+                    </div>
+
+                    <div class="col-12 col-md-6 mb-3">
+                        <small class="text-secondary">Expéditeur</small>
+                        <p class="mb-0 fw-semibold">{{ courrier.expediteur|default:"—" }}</p>
+                    </div>
+
+                    <div class="col-12 col-md-6 mb-3">
+                        <small class="text-secondary">Destinataire</small>
+                        <p class="mb-0 fw-semibold">{{ courrier.destinataire|default:"—" }}</p>
+                    </div>
+
+                    <div class="col-12 mb-3">
+                        <small class="text-secondary">Objet</small>
+                        <p class="fw-semibold mb-0">{{ courrier.objet }}</p>
+                    </div>
+
+                    <div class="col-12">
+                        <small class="text-secondary">Description / Observations</small>
+                        <div class="bg-light rounded p-3 mt-1">
+                            {{ courrier.description|default:"Aucune description renseignée."|linebreaksbr }}
+                        </div>
+                    </div>
+
+                {% else %}
+
+                    <div class="col-12">
+                        <div class="alert alert-warning mb-0">
+                            <i class="bi bi-shield-lock me-2"></i>
+                            Le contenu de ce courrier est protégé. Votre profil ne dispose pas de l'autorisation nécessaire pour consulter les détails.
+                        </div>
+                    </div>
+
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- INFORMATIONS DE TRAITEMENT -->
+    {% if peut_voir_contenu %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="fw-bold mb-0">
+                <i class="bi bi-clipboard-check me-2 text-primary"></i>
+                Informations de traitement
+            </h6>
+        </div>
+
+        <div class="card-body">
+            <div class="row">
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Catégorie</small>
+                    <p class="mb-0">{{ courrier.categorie|default:"Non définie" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Priorité</small>
+                    <p class="mb-0">{{ courrier.get_priorite_display }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Confidentialité</small>
+                    <p class="mb-0">{{ courrier.get_confidentialite_display }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Mode de réception</small>
+                    <p class="mb-0">{{ courrier.get_mode_reception_display|default:"Non renseigné" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Service destinataire</small>
+                    <p class="mb-0">{{ courrier.service|default:"Non affecté" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Responsable du service</small>
+                    <p class="mb-0">{{ courrier.responsable|default:"Non désigné" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Date limite</small>
+                    <p class="mb-0">{{ courrier.date_limite|date:"d/m/Y"|default:"Non définie" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Date d'expédition</small>
+                    <p class="mb-0">{{ courrier.date_expedition|date:"d/m/Y"|default:"Non renseignée" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Date de clôture</small>
+                    <p class="mb-0">{{ courrier.date_cloture|date:"d/m/Y"|default:"Non clôturé" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Enregistré par</small>
+                    <p class="mb-0">{{ courrier.cree_par|default:"—" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Date d'enregistrement</small>
+                    <p class="mb-0">{{ courrier.cree_le|date:"d/m/Y H:i"|default:"—" }}</p>
+                </div>
+
+                <div class="col-12 col-md-4 mb-3">
+                    <small class="text-secondary">Dernière modification</small>
+                    <p class="mb-0">{{ courrier.modifie_le|date:"d/m/Y H:i"|default:"—" }}</p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- TRANSMISSIONS ET AFFECTATIONS -->
+    {% if peut_voir_contenu %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="fw-bold mb-0">
+                <i class="bi bi-arrow-left-right me-2 text-primary"></i>
+                Historique des transmissions et affectations
+            </h6>
+        </div>
+
+        <div class="card-body">
+
+            {% if affectations %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Service</th>
+                                <th>Agent</th>
+                                <th>Transmis par</th>
+                                <th>Date de transmission</th>
+                                <th>Réception</th>
+                                <th>Instruction</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for affectation in affectations %}
+                            <tr>
+                                <td>{{ affectation.service|default:"—" }}</td>
+                                <td>{{ affectation.agent|default:"Non affecté" }}</td>
+                                <td>{{ affectation.transmis_par|default:"—" }}</td>
+
+                                <td class="text-nowrap">
+                                    {{ affectation.date_transmission|date:"d/m/Y H:i"|default:"—" }}
+                                </td>
+
+                                <td>
+                                    {% if affectation.date_confirmation_reception %}
+                                        <span class="text-success">
+                                            <i class="bi bi-check-circle me-1"></i>
+                                            Reçu le {{ affectation.date_confirmation_reception|date:"d/m/Y H:i" }}
+                                        </span>
+                                        <br>
+                                        <small>Par : {{ affectation.confirme_par|default:"—" }}</small>
+                                    {% else %}
+                                        <span class="text-warning">
+                                            <i class="bi bi-clock me-1"></i>
+                                            Non confirmé
+                                        </span>
+                                    {% endif %}
+                                </td>
+
+                                <td>
+                                    {{ affectation.instruction|default:"—"|linebreaksbr }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-4 text-secondary">
+                    <i class="bi bi-inbox fs-2"></i>
+                    <p class="mb-0 mt-2">Aucune transmission enregistrée.</p>
+                </div>
+            {% endif %}
+
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- PIECES JOINTES -->
+    {% if peut_voir_pieces %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+            <h6 class="fw-bold mb-0">
+                <i class="bi bi-paperclip me-2 text-primary"></i>
+                Pièces jointes
+            </h6>
+
+            {% if peut_ajouter_piece_jointe %}
+                <a href="{% url 'ajouter_piece_jointe' courrier.pk %}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-plus-circle me-1"></i>
+                    Ajouter
+                </a>
+            {% endif %}
+        </div>
+
+        <div class="card-body">
+            {% if pieces_jointes %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Nom du fichier</th>
+                                <th>Version</th>
+                                <th>Ajouté par</th>
+                                <th>Date d'ajout</th>
+                                <th class="text-center">Action</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for piece in pieces_jointes %}
+                            <tr>
+                                <td>
+                                    <i class="bi bi-file-earmark me-2 text-primary"></i>
+                                    {{ piece.nom_original|default:piece.fichier.name }}
+                                </td>
+
+                                <td>
+                                    <span class="badge bg-light text-dark border">
+                                        V{{ piece.version }}
+                                    </span>
+                                </td>
+
+                                <td>{{ piece.ajoute_par|default:"—" }}</td>
+
+                                <td>{{ piece.ajoute_le|date:"d/m/Y H:i"|default:"—" }}</td>
+
+                                <td class="text-center">
+                                    {% if piece.fichier %}
+                                        <a href="{% url 'telecharger_piece_jointe' courrier.pk piece.pk %}"
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-download me-1"></i>
+                                            Télécharger
+                                        </a>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-4 text-secondary">
+                    <i class="bi bi-file-earmark-x fs-2"></i>
+                    <p class="mb-0 mt-2">Aucune pièce jointe active.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- DOCUMENT PRINCIPAL -->
+    {% if peut_voir_contenu and courrier.document %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="fw-bold mb-0">
+                <i class="bi bi-file-earmark-pdf me-2 text-danger"></i>
+                Document principal
+            </h6>
+        </div>
+
+        <div class="card-body">
+            <a href="{% url 'telecharger_document_courrier' courrier.pk %}"
+               class="btn btn-outline-primary">
+                <i class="bi bi-download me-1"></i>
+                Télécharger le document
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- HISTORIQUE DES OPERATIONS -->
+    {% if peut_voir_historique %}
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="fw-bold mb-0">
+                <i class="bi bi-clock-history me-2 text-primary"></i>
+                Historique des opérations
+            </h6>
+        </div>
+
+        <div class="card-body">
+            {% if historique %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Utilisateur</th>
+                                <th>Action</th>
+                                <th>Détails</th>
+                                <th>Motif</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for ligne in historique %}
+                            <tr>
+                                <td class="text-nowrap">
+                                    {{ ligne.date_action|date:"d/m/Y H:i" }}
+                                </td>
+
+                                <td>{{ ligne.utilisateur|default:"—" }}</td>
+
+                                <td>
+                                    <span class="badge bg-light text-dark border">
+                                        {{ ligne.action }}
+                                    </span>
+                                </td>
+
+                                <td>{{ ligne.details|default:"—"|linebreaksbr }}</td>
+                                <td>{{ ligne.motif|default:"—"|linebreaksbr }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-4 text-secondary">
+                    <i class="bi bi-clock-history fs-2"></i>
+                    <p class="mb-0 mt-2">Aucun historique disponible.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+{% endblock %}

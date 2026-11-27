@@ -1,0 +1,124 @@
+
+{% extends "base.html" %}
+
+{% block title %}Confirmation de clôture - GSC{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid py-4">
+
+    <div class="row justify-content-center">
+
+        <div class="col-12 col-md-9 col-lg-7 col-xl-6">
+
+            <div class="card border-0 shadow-sm">
+
+                <!-- EN-TÊTE -->
+                <div class="card-header bg-danger text-white py-3">
+                    <h4 class="fw-bold mb-0">
+                        <i class="bi bi-lock-fill me-2"></i>
+                        Confirmation de clôture
+                    </h4>
+                </div>
+
+                <div class="card-body p-4">
+
+                    <div class="text-center mb-4">
+
+                        <i class="bi bi-exclamation-triangle text-danger"
+                           style="font-size: 3rem;"></i>
+
+                        <h5 class="fw-bold mt-3">
+                            Confirmer la clôture de ce courrier ?
+                        </h5>
+
+                        <p class="text-secondary mb-0">
+                            Vous êtes sur le point de clôturer le traitement de ce courrier.
+                        </p>
+
+                    </div>
+
+                    <!-- RÉCAPITULATIF -->
+                    <div class="alert alert-light border">
+
+                        <div class="mb-3">
+                            <small class="text-secondary">Référence</small>
+                            <div class="fw-bold">{{ courrier.reference }}</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <small class="text-secondary">Objet</small>
+                            <div class="fw-semibold">{{ courrier.objet }}</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <small class="text-secondary">Statut actuel</small>
+                            <div>
+                                <span class="badge bg-primary">
+                                    {{ courrier.get_statut_display }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <small class="text-secondary">Service destinataire</small>
+                            <div>{{ courrier.service|default:"Non affecté" }}</div>
+                        </div>
+
+                    </div>
+
+                    <!-- AVERTISSEMENT -->
+                    <div class="alert alert-warning">
+
+                        <div class="fw-bold mb-1">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Attention
+                        </div>
+
+                        <p class="mb-0 small">
+                            Après confirmation, le courrier passera au statut
+                            « Clôturé ». L'opération sera enregistrée dans son
+                            historique. Toute réouverture éventuelle devra être
+                            effectuée par un utilisateur disposant des droits
+                            nécessaires et avec un motif.
+                        </p>
+
+                    </div>
+
+                    <!-- FORMULAIRE -->
+                    <form method="post">
+
+                        {% csrf_token %}
+
+                        <div class="d-flex flex-wrap justify-content-between gap-2 mt-4">
+
+                            <a href="{% url 'detail_courrier' courrier.pk %}"
+                               class="btn btn-outline-secondary px-4">
+                                <i class="bi bi-arrow-left me-1"></i>
+                                Annuler
+                            </a>
+
+                            <button type="submit" class="btn btn-danger px-4">
+                                <i class="bi bi-lock-fill me-1"></i>
+                                Confirmer la clôture
+                            </button>
+
+                        </div>
+
+                    </form>
+
+                </div>
+
+                <div class="card-footer bg-white text-center text-secondary small">
+                    GSC - Gestion et Suivi du Courrier
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

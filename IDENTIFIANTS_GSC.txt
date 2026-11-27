@@ -1,0 +1,56 @@
+﻿================================================================
+GSC - GESTION ET SUIVI DU COURRIER : IDENTIFIANTS
+Genere le 17/11/2026 a 12:39
+================================================================
+
+CONFIDENTIEL : fichier a usage local, comptes de TEST uniquement.
+Ne pas l'envoyer par e-mail, ne pas le copier sur un serveur de production.
+
+--- ACCES A L'APPLICATION ---
+Application      : http://127.0.0.1:8000/
+Administration   : http://127.0.0.1:8000/admin/
+Lancement        : .venv\Scripts\Activate.ps1   puis   python manage.py runserver
+
+--- COMPTES ---
+Compte : test_accueil
+Profil : Accueil
+Mot de passe : ysmaUE6nsncp#7
+
+Compte : test_secretariat
+Profil : Secrétariat
+Mot de passe : EN2bkg2ytry8#7
+
+Compte : test_responsable
+Profil : Responsable de service
+Mot de passe : sGYvC4B2UtSF#7
+
+Compte : test_agent
+Profil : Agent
+Mot de passe : Zk2bk7q78fpD#7
+
+Compte : test_direction
+Profil : Direction
+Mot de passe : ZSRTePDp4nWK#7
+
+Compte : test_admin
+Profil : Administrateur (superuser)
+Mot de passe : qWxt77nTQyQE#7
+
+Compte : admin_gsc
+Profil : Administrateur (superuser)
+Mot de passe : Pyc98wRYcZAm#7
+
+--- BASE DE DONNEES SQL SERVER ---
+Base             : GESTION_COURRIER
+Serveur/instance : localhost\GSC
+Authentification : Windows (Trusted connection)
+Mot de passe SQL : sans objet
+
+--- AUTRES ---
+Cle secrete Django : dans le fichier .env (DJANGO_SECRET_KEY)
+Sauvegardes creees : .env.bak, courrier/exports.py.bak (si modifies)
+Controle complet   : python audit_gsc.py
+Reinitialiser les mots de passe : python finaliser_gsc.py
+
+AVANT LA MISE EN PRODUCTION : supprimer les comptes test_*, changer tous
+les mots de passe, DJANGO_DEBUG=False, retirer db_owner du compte SQL.

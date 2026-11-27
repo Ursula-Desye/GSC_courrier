@@ -1,0 +1,133 @@
+﻿GSC - COMPTES CREES (mots de passe provisoires)
+Genere le 20/11/2026 08:18
+CONFIDENTIEL : a remettre a chaque personne puis a supprimer.
+
+Nom : NJOCK Elie
+Compte : elie.njock
+Mot de passe : gmcsa.12
+Role : Chef de département
+
+Nom : ABDEL
+Compte : abdel
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : BAHEL Franck
+Compte : franck.bahel
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : BOUM Christine
+Compte : christine.boum
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : BOUMTJE Etienne
+Compte : etienne.boumtje
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : KOUOMEKEU Blaise
+Compte : blaise.kouomekeu
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : MENGUE Viviane
+Compte : viviane.mengue
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : MOUTAPAM Jean
+Compte : jean.moutapam
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : ABANGA Sylvain
+Compte : sylvain.abanga
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : ALASSA
+Compte : alassa
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : ATE Daniel
+Compte : daniel.ate
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : AYMELE Beldiane
+Compte : beldiane.aymele
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : EKENGLO Maeva
+Compte : maeva.ekenglo
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : ESSOH Marie Marguerite
+Compte : marie.essoh
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : MEHOUNE Steve
+Compte : steve.mehoune
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : NANE Merveille
+Compte : merveille.nane
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : NGO MINYEM Yollande
+Compte : yollande.ngo.minyem
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : NINTEDEM Patricia
+Compte : patricia.nintedem
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : SOGMAM Pierre
+Compte : pierre.sogmam
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : TANG Thierry
+Compte : thierry.tang
+Mot de passe : gmcsa.12
+Role : Agent
+
+Nom : TCHAMENI Aurelien
+Compte : aurelien.tchameni
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : NGOLLE Samuel
+Compte : samuel.ngolle
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : MINTOU Dadier
+Compte : dadier.mintou
+Mot de passe : gmcsa.12
+Role : Chef de département
+
+Nom : NGAMBONO Axel
+Compte : axel.ngambono
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : EBOBISSE MURIELLE
+Compte : murielle.ebobisse
+Mot de passe : gmcsa.12
+Role : Responsable de service
+
+Nom : ABANDA PAUL SIRACIDE
+Compte : paul.abanda
+Mot de passe : gmcsa.12
+Role : Responsable de service

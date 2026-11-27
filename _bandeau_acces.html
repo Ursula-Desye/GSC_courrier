@@ -1,0 +1,24 @@
+{% if profil == "AGENT" %}
+<div class="alert alert-light border d-flex flex-wrap align-items-center gap-2 py-2 mb-3">
+  {% if remplacement %}
+    <span class="badge text-bg-warning">Remplacement</span>
+    <span>Accès temporaire : vous agissez en remplacement de
+      <strong>{{ remplacement.agent_cible.get_full_name|default:remplacement.agent_cible.username }}</strong>
+      jusqu'au {{ remplacement.date_fin|date:"d/m/Y H:i" }}.</span>
+  {% else %}
+    {% for a in acces_valides %}
+      <span class="badge text-bg-warning">Remplacement</span>
+      <span>Vous remplacez {{ a.agent_cible.get_full_name|default:a.agent_cible.username }} jusqu'au {{ a.date_fin|date:"d/m/Y" }}.</span>
+    {% endfor %}
+  {% endif %}
+  <span class="ms-auto d-flex gap-2">
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'nouvelle_demande_acces' %}">Demander l'accès à d'autres dossiers</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'liste_demandes_acces' %}">Mes demandes{% if en_attente %} ({{ en_attente }}){% endif %}</a>
+  </span>
+</div>
+{% elif profil == "RESPONSABLE" and a_decider %}
+<div class="alert alert-warning d-flex align-items-center gap-2 py-2 mb-3">
+  <span><strong>{{ a_decider }}</strong> demande{{ a_decider|pluralize }} d'accès en attente de votre décision.</span>
+  <a class="btn btn-sm btn-warning ms-auto" href="{% url 'liste_demandes_acces' %}">Examiner</a>
+</div>
+{% endif %}

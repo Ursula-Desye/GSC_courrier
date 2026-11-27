@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex align-items-center mb-3">
+  <h2 class="h4 mb-0">Demandes d'accès temporaire</h2>
+  {% if profil == "AGENT" %}
+  <a class="btn btn-primary ms-auto" href="{% url 'nouvelle_demande_acces' %}">Nouvelle demande</a>
+  {% endif %}
+</div>
+
+{% if messages %}{% for m in messages %}<div class="alert alert-{{ m.tags }}">{{ m }}</div>{% endfor %}{% endif %}
+
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead>
+    <tr><th>N°</th><th>Demandeur</th><th>Collègue remplacé</th><th>Dossiers</th><th>Motif</th><th>État</th><th>Validité</th><th></th></tr>
+  </thead>
+  <tbody>
+  {% for d in demandes %}
+    <tr>
+      <td>{{ d.pk }}</td>
+      <td>{{ d.demandeur.get_full_name|default:d.demandeur.username }}</td>
+      <td>{{ d.agent_cible.get_full_name|default:d.agent_cible.username }}</td>
+      <td>{{ d.get_portee_display }}</td>
+      <td>{{ d.motif|truncatechars:60 }}</td>
+      <td>{{ d.etat }}{% if d.commentaire_decision %}<br><small class="text-muted">{{ d.commentaire_decision|truncatechars:60 }}</small>{% endif %}</td>
+      <td>{% if d.date_fin %}jusqu'au {{ d.date_fin|date:"d/m/Y H:i" }}{% else %}{{ d.jours_demandes }} j demandé(s){% endif %}</td>
+      <td class="text-end">
+        {% if d.peut_decider %}<a class="btn btn-sm btn-warning" href="{% url 'decider_demande_acces' d.pk %}">Examiner</a>{% endif %}
+        {% if d.peut_revoquer or d.peut_annuler %}
+        <form method="post" action="{% url 'revoquer_demande_acces' d.pk %}" class="d-inline">
+          {% csrf_token %}
+          <button class="btn btn-sm btn-outline-danger" type="submit">{% if d.peut_annuler %}Annuler{% else %}Révoquer{% endif %}</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="8" class="text-muted">Aucune demande.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

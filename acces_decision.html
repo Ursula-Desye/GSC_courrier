@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="h4 mb-3">Demande d'accès n°{{ demande.pk }}</h2>
+
+<dl class="row">
+  <dt class="col-sm-3">Demandeur</dt><dd class="col-sm-9">{{ demande.demandeur.get_full_name|default:demande.demandeur.username }}</dd>
+  <dt class="col-sm-3">Remplace</dt><dd class="col-sm-9">{{ demande.agent_cible.get_full_name|default:demande.agent_cible.username }}</dd>
+  <dt class="col-sm-3">Service</dt><dd class="col-sm-9">{{ demande.service }}</dd>
+  <dt class="col-sm-3">Dossiers</dt><dd class="col-sm-9">{{ demande.get_portee_display }} ({{ nombre_courriers }} courrier{{ nombre_courriers|pluralize }}, hors confidentiels)</dd>
+  <dt class="col-sm-3">Motif</dt><dd class="col-sm-9">{{ demande.motif|linebreaksbr }}</dd>
+  <dt class="col-sm-3">Durée demandée</dt><dd class="col-sm-9">{{ demande.jours_demandes }} jour(s)</dd>
+</dl>
+
+{% if courriers_cites %}
+<p class="mb-1"><strong>Courriers cités :</strong></p>
+<ul>{% for c in courriers_cites %}<li>{{ c.reference }} – {{ c.objet|truncatechars:70 }}</li>{% endfor %}</ul>
+{% endif %}
+
+<div class="alert alert-info">
+  Le demandeur pourra consulter et traiter ces courriers pendant la durée accordée.
+  Il ne pourra ni les clôturer ni les retourner. Les courriers confidentiels restent exclus.
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.non_field_errors }}
+  <div class="mb-3">{{ form.decision.label_tag }}{{ form.decision }}{{ form.decision.errors }}</div>
+  <div class="mb-3">{{ form.jours.label_tag }}{{ form.jours }}{{ form.jours.errors }}</div>
+  <div class="mb-3">{{ form.commentaire.label_tag }}{{ form.commentaire }}{{ form.commentaire.errors }}</div>
+  <button class="btn btn-primary" type="submit">Valider ma décision</button>
+  <a class="btn btn-outline-secondary" href="{% url 'liste_demandes_acces' %}">Retour</a>
+</form>
+{% endblock %}

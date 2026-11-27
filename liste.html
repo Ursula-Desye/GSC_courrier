@@ -1,0 +1,289 @@
+
+{% extends "base.html" %}
+{% load gsc_acces %}
+
+{% block title %}Registre des courriers - GSC{% endblock %}
+
+{% block content %}
+{% bandeau_acces %}
+
+<div class="container-fluid px-0">
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">
+                <i class="bi bi-journal-text me-2 text-primary"></i>
+                {{ filtre_titre|default:"Registre des courriers" }}
+            </h2>
+            <p class="text-secondary mb-0">Consultation, recherche et suivi des courriers</p>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'exporter_courriers_excel' %}?q={{ q|urlencode }}&sens={{ sens|urlencode }}&statut={{ statut|urlencode }}"
+               class="btn btn-success">
+                <i class="bi bi-file-earmark-excel me-1"></i> Excel
+            </a>
+
+            <a href="{% url 'exporter_courriers_pdf' %}?q={{ q|urlencode }}&sens={{ sens|urlencode }}&statut={{ statut|urlencode }}"
+               class="btn btn-danger">
+                <i class="bi bi-file-earmark-pdf me-1"></i> PDF
+            </a>
+
+            {% if perms.courrier.add_courrier or user.is_superuser %}
+            <a href="{% url 'nouveau_courrier' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i> Nouveau courrier
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white py-3">
+            <h6 class="fw-bold mb-0">
+                <i class="bi bi-funnel me-2 text-primary"></i> Recherche et filtres
+            </h6>
+        </div>
+
+        <div class="card-body">
+            <form method="GET" class="row g-3">
+                <input type="hidden" name="categorie" value="{{ categorie }}">
+
+                <div class="col-12 col-md-5">
+                    <label class="form-label small fw-semibold">Recherche</label>
+                    <input type="text" class="form-control" name="q"
+                           value="{{ q }}"
+                           placeholder="Référence, objet, expéditeur, destinataire...">
+                </div>
+
+                <div class="col-12 col-md-2">
+                    <label class="form-label small fw-semibold">Sens du courrier</label>
+                    <select class="form-select" name="sens">
+                        <option value="">Tous les sens</option>
+                        <option value="ENTRANT" {% if sens == "ENTRANT" %}selected{% endif %}>Entrant</option>
+                        <option value="SORTANT" {% if sens == "SORTANT" %}selected{% endif %}>Sortant</option>
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-3">
+                    <label class="form-label small fw-semibold">Statut</label>
+                    <select class="form-select" name="statut">
+                        <option value="">Tous les statuts</option>
+                        <option value="ENREGISTRE" {% if statut == "ENREGISTRE" %}selected{% endif %}>Enregistré</option>
+                        <option value="TRANSMIS" {% if statut == "TRANSMIS" %}selected{% endif %}>Transmis</option>
+                        <option value="EN_COURS" {% if statut == "EN_COURS" %}selected{% endif %}>En cours</option>
+                        <option value="EN_ATTENTE" {% if statut == "EN_ATTENTE" %}selected{% endif %}>En attente</option>
+                        <option value="TRAITE" {% if statut == "TRAITE" %}selected{% endif %}>Traité</option>
+                        <option value="CLOTURE" {% if statut == "CLOTURE" %}selected{% endif %}>Clôturé</option>
+                    </select>
+                </div>
+
+                <div class="col-12 col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i> Rechercher
+                    </button>
+                </div>
+            </form>
+
+            {% if categorie or q or sens or statut %}
+            <div class="mt-3">
+                <a href="{% url 'liste_courriers' %}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-circle me-1"></i> Effacer les filtres
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+                <div>
+                    <h6 class="fw-bold mb-1">Liste des courriers</h6>
+                    <span class="text-secondary small">
+                        <strong>{{ paginator.count }}</strong> courrier(s) trouvé(s)
+                        {% if page_obj %}
+                        — Page {{ page_obj.number }} sur {{ paginator.num_pages|default:1 }}
+                        {% endif %}
+                    </span>
+                </div>
+
+                <form method="GET" class="d-flex align-items-center gap-2">
+                    <input type="hidden" name="categorie" value="{{ categorie }}">
+                    <input type="hidden" name="q" value="{{ q }}">
+                    <input type="hidden" name="sens" value="{{ sens }}">
+                    <input type="hidden" name="statut" value="{{ statut }}">
+
+                    <label for="par_page" class="small text-secondary text-nowrap">Afficher :</label>
+                    <select name="par_page" id="par_page"
+                            class="form-select form-select-sm"
+                            style="width: 85px;"
+                            onchange="this.form.submit()">
+                        <option value="10" {% if nombre_par_page == "10" %}selected{% endif %}>10</option>
+                        <option value="25" {% if nombre_par_page == "25" %}selected{% endif %}>25</option>
+                        <option value="50" {% if nombre_par_page == "50" %}selected{% endif %}>50</option>
+                        <option value="100" {% if nombre_par_page == "100" %}selected{% endif %}>100</option>
+                    </select>
+                    <span class="small text-secondary">par page</span>
+                </form>
+            </div>
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">Référence</th>
+                            <th>Date</th>
+                            <th>Sens</th>
+                            <th>Expéditeur</th>
+                            <th>Destinataire</th>
+                            <th>Objet</th>
+                            <th>Statut</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for c in courriers %}
+                        <tr>
+                            <td class="ps-3">
+                                <a href="{% url 'detail_courrier' c.pk %}"
+                                   class="fw-bold text-decoration-none">
+                                    {{ c.reference|default:"Sans référence" }}
+                                </a>
+                            </td>
+
+                            <td class="text-nowrap">
+                                {{ c.date_reception_expedition|date:"d/m/Y" }}
+                            </td>
+
+                            <td>
+                                {% if c.sens == "ENTRANT" %}
+                                <span class="badge bg-info text-dark">
+                                    <i class="bi bi-box-arrow-in-down me-1"></i> Entrant
+                                </span>
+                                {% else %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i> Sortant
+                                </span>
+                                {% endif %}
+                            </td>
+
+                            {% if c.pk in courriers_contenu_autorise %}
+                                <td>{{ c.expediteur|default:"—" }}</td>
+                                <td>{{ c.destinataire|default:"—" }}</td>
+                                <td style="min-width: 180px;">
+                                    {{ c.objet|default:"—"|truncatechars:75 }}
+                                </td>
+                            {% else %}
+                                <td colspan="3">
+                                    <span class="text-secondary small">
+                                        <i class="bi bi-shield-lock me-1"></i>
+                                        Informations protégées — accès au contenu non autorisé
+                                    </span>
+                                </td>
+                            {% endif %}
+
+                            <td>
+                                {% if c.statut == "ENREGISTRE" %}
+                                    <span class="badge bg-secondary">Enregistré</span>
+                                {% elif c.statut == "TRANSMIS" %}
+                                    <span class="badge bg-primary">Transmis</span>
+                                {% elif c.statut == "EN_COURS" %}
+                                    <span class="badge bg-info text-dark">En cours</span>
+                                {% elif c.statut == "EN_ATTENTE" %}
+                                    <span class="badge bg-warning text-dark">En attente</span>
+                                {% elif c.statut == "TRAITE" %}
+                                    <span class="badge bg-success">Traité</span>
+                                {% elif c.statut == "CLOTURE" %}
+                                    <span class="badge bg-dark">Clôturé</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ c.get_statut_display }}</span>
+                                {% endif %}
+                            </td>
+
+                            <td class="text-center">
+                                <a href="{% url 'detail_courrier' c.pk %}"
+                                   class="btn btn-sm btn-outline-primary"
+                                   title="Consulter le courrier">
+                                    <i class="bi bi-eye"></i> Détails
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5">
+                                <i class="bi bi-inbox text-secondary" style="font-size: 2.5rem;"></i>
+                                <p class="fw-semibold mt-2 mb-1">Aucun courrier trouvé</p>
+                                <p class="text-secondary small mb-0">
+                                    Aucun courrier ne correspond aux critères de recherche.
+                                </p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-white py-3">
+            <nav aria-label="Pagination des courriers">
+                <ul class="pagination justify-content-center flex-wrap mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link"
+                           href="?page=1&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens|urlencode }}&statut={{ statut|urlencode }}">
+                            Première
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link"
+                           href="?page={{ page_obj.previous_page_number }}&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens|urlencode }}&statut={{ statut|urlencode }}">
+                            Précédent
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Première</span></li>
+                    <li class="page-item disabled"><span class="page-link">Précédent</span></li>
+                    {% endif %}
+
+                    {% for num in paginator.page_range %}
+                        {% if num == page_obj.number %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+                        <li class="page-item">
+                            <a class="page-link"
+                               href="?page={{ num }}&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens|urlencode }}&statut={{ statut|urlencode }}">
+                                {{ num }}
+                            </a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link"
+                           href="?page={{ page_obj.next_page_number }}&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens|urlencode }}&statut={{ statut|urlencode }}">
+                            Suivant
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link"
+                           href="?page={{ paginator.num_pages }}&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens|urlencode }}&statut={{ statut|urlencode }}">
+                            Dernière
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Suivant</span></li>
+                    <li class="page-item disabled"><span class="page-link">Dernière</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,194 @@
+
+from django.urls import path
+
+from . import views, bordereaux, exports, acces
+
+
+urlpatterns = [
+
+    # Demandes d'acces temporaire (remplacement entre agents)
+    path("acces/", acces.liste_demandes_acces, name="liste_demandes_acces"),
+    path("acces/nouvelle/", acces.nouvelle_demande_acces, name="nouvelle_demande_acces"),
+    path("acces/<int:pk>/decider/", acces.decider_demande_acces, name="decider_demande_acces"),
+    path("acces/<int:pk>/revoquer/", acces.revoquer_demande_acces, name="revoquer_demande_acces"),
+
+    # ========================================================
+    # TABLEAU DE BORD ET REGISTRE
+    # ========================================================
+
+    path(
+        "dashboard/",
+        views.dashboard,
+        name="dashboard_interne",
+    ),
+
+    path(
+        "",
+        views.liste_courriers,
+        name="liste_courriers",
+    ),
+
+    path(
+        "nouveau/",
+        views.nouveau_courrier,
+        name="nouveau_courrier",
+    ),
+
+    # ========================================================
+    # EXPORTS
+    # ========================================================
+
+    path(
+        "exporter/excel/",
+        exports.exporter_courriers_excel,
+        name="exporter_courriers_excel",
+    ),
+
+    path(
+        "exporter/pdf/",
+        exports.exporter_courriers_pdf,
+        name="exporter_courriers_pdf",
+    ),
+
+    # ========================================================
+    # BORDEREAUX DE TRANSMISSION
+    # ========================================================
+
+    path(
+        "bordereaux/",
+        bordereaux.liste_bordereaux,
+        name="liste_bordereaux",
+    ),
+
+    path(
+        "bordereaux/nouveau/",
+        bordereaux.creer_bordereau,
+        name="creer_bordereau",
+    ),
+
+    path(
+        "bordereaux/<int:pk>/",
+        bordereaux.detail_bordereau,
+        name="detail_bordereau",
+    ),
+
+    path(
+        "bordereaux/<int:pk>/receptionner/",
+        bordereaux.receptionner_bordereau,
+        name="receptionner_bordereau",
+    ),
+
+    # ========================================================
+    # AUTORISATIONS DE CONFIDENTIALITÉ
+    # ========================================================
+
+    path(
+        "<int:pk>/autorisations-confidentielles/",
+        views.gerer_autorisations_confidentielles,
+        name="gerer_autorisations_confidentielles",
+    ),
+
+    path(
+        "<int:pk>/autorisations-confidentielles/<int:autorisation_id>/revoquer/",
+        views.revoquer_autorisation_confidentielle,
+        name="revoquer_autorisation_confidentielle",
+    ),
+
+    # ========================================================
+    # TÉLÉCHARGEMENT DES DOCUMENTS
+    # ========================================================
+
+    path(
+        "<int:pk>/document/telecharger/",
+        views.telecharger_document_courrier,
+        name="telecharger_document_courrier",
+    ),
+
+    path(
+        "<int:pk>/pieces-jointes/<int:piece_id>/telecharger/",
+        views.telecharger_piece_jointe,
+        name="telecharger_piece_jointe",
+    ),
+
+    # ========================================================
+    # DÉTAIL ET MODIFICATION
+    # ========================================================
+
+    path(
+        "<int:pk>/",
+        views.detail_courrier,
+        name="detail_courrier",
+    ),
+
+    path(
+        "<int:pk>/modifier/",
+        views.modifier_courrier,
+        name="modifier_courrier",
+    ),
+
+    # ========================================================
+    # TRANSMISSION ET AFFECTATION
+    # ========================================================
+
+    path(
+        "<int:pk>/transmettre/",
+        views.transmettre_courrier,
+        name="transmettre_courrier",
+    ),
+
+    path(
+        "<int:pk>/affecter-agent/",
+        views.affecter_agent,
+        name="affecter_agent",
+    ),
+
+    path(
+        "<int:pk>/confirmer-reception/",
+        views.confirmer_reception,
+        name="confirmer_reception",
+    ),
+
+    # ========================================================
+    # TRAITEMENT ET SUIVI
+    # ========================================================
+
+    path(
+        "<int:pk>/traiter/",
+        views.traiter_courrier,
+        name="traiter_courrier",
+    ),
+
+    path(
+        "<int:pk>/retourner/",
+        views.retourner_courrier,
+        name="retourner_courrier",
+    ),
+
+    path(
+        "<int:pk>/cloturer/",
+        views.cloturer_courrier,
+        name="cloturer_courrier",
+    ),
+
+    path(
+        "<int:pk>/reouvrir/",
+        views.reouvrir_courrier,
+        name="reouvrir_courrier",
+    ),
+
+    # ========================================================
+    # PIÈCES JOINTES
+    # ========================================================
+
+    path(
+        "<int:pk>/pieces-jointes/ajouter/",
+        views.ajouter_piece_jointe,
+        name="ajouter_piece_jointe",
+    ),
+
+    path(
+        "<int:pk>/pieces-jointes/<int:piece_id>/retirer/",
+        views.retirer_piece_jointe,
+        name="retirer_piece_jointe",
+    ),
+]

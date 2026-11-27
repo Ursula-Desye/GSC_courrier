@@ -1,0 +1,2095 @@
+
+from pathlib import Path
+
+from django import forms
+from django.contrib.auth import get_user_model
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Q
+from django.http import FileResponse, Http404
+from django.shortcuts import render, redirect, get_object_or_404
+from django.utils import timezone
+from django.contrib import messages
+
+from .models import (
+    Courrier,
+    Affectation,
+    Historique,
+    Service,
+    PieceJointe,
+    RetourCourrier,
+    AutorisationConfidentialite,
+    JournalAccesConfidentiel,
+    ResponsableService,
+)
+
+from .forms import CourrierForm, AffectationForm
+
+from .permissions import (
+    obtenir_profil,
+    utilisateur_peut_consulter,
+    utilisateur_peut_consulter_courrier,
+    utilisateur_peut_consulter_contenu_courrier,
+    utilisateur_peut_consulter_piece_confidentielle,
+    utilisateur_peut_consulter_historique_confidentiel,
+    utilisateur_peut_enregistrer,
+    utilisateur_peut_modifier_courrier,
+    utilisateur_peut_transmettre,
+    utilisateur_peut_affecter_agent,
+    utilisateur_peut_traiter_courrier,
+    utilisateur_peut_cloturer_courrier,
+    utilisateur_peut_retourner_courrier,
+    utilisateur_peut_reouvrir_courrier,
+    utilisateur_est_responsable_du_service,
+    utilisateur_est_responsable_du_courrier,
+    services_accessibles_du_responsable,
+    responsable_peut_gerer_categorie,
+    agent_est_affecte_au_courrier,
+    courrier_est_confidentiel,
+    courrier_est_strictement_confidentiel,
+    autorisation_confidentielle_valide,
+    utilisateur_est_destinataire_confidentiel,
+    utilisateur_peut_gerer_autorisations_confidentielles,
+    agent_a_acces_temporaire,
+    acces_temporaire_q,
+    libelle_remplacement,
+)
+
+
+User = get_user_model()
+
+
+# ============================================================
+# FORMULAIRES
+# ============================================================
+
+class TraitementForm(forms.Form):
+    statut = forms.ChoiceField(
+        choices=[
+            ("EN_COURS", "En cours de traitement"),
+            ("EN_ATTENTE", "En attente"),
+            ("TRAITE", "Traité"),
+        ],
+        label="État du traitement",
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+
+    observation = forms.CharField(
+        required=False,
+        label="Observation",
+        widget=forms.Textarea(attrs={
+            "class": "form-control",
+            "rows": 4,
+        }),
+    )
+
+
+class RetourForm(forms.Form):
+    motif = forms.CharField(
+        required=True,
+        label="Motif du retour",
+        widget=forms.Textarea(attrs={
+            "class": "form-control",
+            "rows": 4,
+        }),
+    )
+
+    def clean_motif(self):
+        motif = self.cleaned_data["motif"].strip()
+        if not motif:
+            raise forms.ValidationError("Le motif du retour est obligatoire.")
+        return motif
+
+
+class MotifForm(forms.Form):
+    motif = forms.CharField(
+        required=True,
+        label="Motif",
+        widget=forms.Textarea(attrs={
+            "class": "form-control",
+            "rows": 4,
+        }),
+    )
+
+    def clean_motif(self):
+        motif = self.cleaned_data["motif"].strip()
+        if not motif:
+            raise forms.ValidationError("Le motif est obligatoire.")
+        return motif
+
+
+class PieceJointeForm(forms.Form):
+    fichier = forms.FileField(
+        label="Fichier à joindre",
+        widget=forms.ClearableFileInput(attrs={
+            "class": "form-control",
+        }),
+    )
+
+    def clean_fichier(self):
+        fichier = self.cleaned_data["fichier"]
+
+        extensions = {
+            ".pdf", ".doc", ".docx",
+            ".xls", ".xlsx",
+            ".jpg", ".jpeg", ".png",
+        }
+
+        extension = Path(fichier.name).suffix.lower()
+
+        if extension not in extensions:
+            raise forms.ValidationError(
+                "Format non autorisé. Formats acceptés : "
+                "PDF, DOC, DOCX, XLS, XLSX, JPG, JPEG et PNG."
+            )
+
+        if not fichier.size:
+            raise forms.ValidationError("Le fichier est vide.")
+
+        if fichier.size > 20 * 1024 * 1024:
+            raise forms.ValidationError(
+                "Le fichier ne doit pas dépasser 20 Mo."
+            )
+
+        return fichier
+
+
+class AutorisationConfidentialiteForm(forms.Form):
+    utilisateur = forms.ModelChoiceField(
+        queryset=User.objects.none(),
+        label="Utilisateur bénéficiaire",
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+
+    type_acces = forms.ChoiceField(
+        choices=[
+            ("CONTENU", "Consultation du contenu"),
+            ("PIECES_JOINTES", "Consultation des pièces jointes"),
+            ("HISTORIQUE", "Consultation de l'historique"),
+        ],
+        label="Type d'autorisation",
+        widget=forms.Select(attrs={"class": "form-select"}),
+    )
+
+    motif = forms.CharField(
+        required=True,
+        min_length=5,
+        label="Motif de l'autorisation",
+        widget=forms.Textarea(attrs={
+            "class": "form-control",
+            "rows": 3,
+        }),
+    )
+
+    date_fin = forms.DateTimeField(
+        required=False,
+        label="Date de fin de l'autorisation",
+        input_formats=["%Y-%m-%dT%H:%M"],
+        widget=forms.DateTimeInput(attrs={
+            "class": "form-control",
+            "type": "datetime-local",
+        }),
+    )
+
+    def __init__(self, *args, **kwargs):
+        demandeur = kwargs.pop("demandeur", None)
+        super().__init__(*args, **kwargs)
+
+        queryset = User.objects.filter(is_active=True).order_by(
+            "last_name", "first_name", "username"
+        )
+
+        if demandeur and demandeur.pk:
+            queryset = queryset.exclude(pk=demandeur.pk)
+
+        self.fields["utilisateur"].queryset = queryset
+
+    def clean_motif(self):
+        motif = self.cleaned_data["motif"].strip()
+        if not motif:
+            raise forms.ValidationError("Le motif est obligatoire.")
+        return motif
+
+    def clean_date_fin(self):
+        date_fin = self.cleaned_data.get("date_fin")
+
+        if date_fin and timezone.is_naive(date_fin):
+            date_fin = timezone.make_aware(
+                date_fin,
+                timezone.get_current_timezone(),
+            )
+
+        if date_fin and date_fin <= timezone.now():
+            raise forms.ValidationError(
+                "La date de fin doit être dans le futur."
+            )
+
+        return date_fin
+
+
+# ============================================================
+# JOURNALISATION CONFIDENTIELLE
+# ============================================================
+
+def journaliser_acces_confidentiel(
+    courrier,
+    utilisateur,
+    action,
+    motif="",
+):
+    if not courrier or not utilisateur:
+        return
+
+    if not courrier_est_confidentiel(courrier):
+        return
+
+    actions_valides = {
+        "CONSULTATION_CONTENU",
+        "CONSULTATION_PIECE",
+        "CONSULTATION_HISTORIQUE",
+        "EXPORT",
+    }
+
+    if action not in actions_valides:
+        raise ValueError(
+            f"Action de journalisation inconnue : {action}"
+        )
+
+    JournalAccesConfidentiel.objects.create(
+        courrier=courrier,
+        utilisateur=utilisateur,
+        action=action,
+        motif=motif,
+    )
+
+
+# ============================================================
+# CONTRÔLES DE CONFIDENTIALITÉ
+# ============================================================
+
+def utilisateur_a_acces_confidentiel(
+    user,
+    courrier,
+    type_acces="CONTENU",
+):
+    """
+    Le destinataire désigné obtient uniquement le contenu.
+    Les pièces jointes et l'historique nécessitent des autorisations
+    explicites distinctes.
+    """
+    if not user or not courrier or not user.is_authenticated:
+        return False
+
+    if (
+        type_acces == "CONTENU"
+        and utilisateur_est_destinataire_confidentiel(user, courrier)
+    ):
+        return True
+
+    return autorisation_confidentielle_valide(
+        user,
+        courrier,
+        type_acces,
+    )
+
+
+def utilisateur_peut_voir_metadonnees(user, courrier):
+    if utilisateur_peut_consulter_courrier(user, courrier):
+        return True
+
+    return any(
+        utilisateur_a_acces_confidentiel(user, courrier, droit)
+        for droit in ("CONTENU", "PIECES_JOINTES", "HISTORIQUE")
+    )
+
+
+def utilisateur_peut_voir_contenu(user, courrier):
+    if not courrier_est_confidentiel(courrier):
+        return utilisateur_peut_consulter_contenu_courrier(
+            user, courrier
+        )
+
+    return utilisateur_a_acces_confidentiel(
+        user, courrier, "CONTENU"
+    )
+
+
+def utilisateur_peut_voir_pieces(user, courrier):
+    if not courrier_est_confidentiel(courrier):
+        return utilisateur_peut_consulter_piece_confidentielle(
+            user, courrier
+        )
+
+    return autorisation_confidentielle_valide(
+        user, courrier, "PIECES_JOINTES"
+    )
+
+
+def utilisateur_peut_voir_historique(user, courrier):
+    if not courrier_est_confidentiel(courrier):
+        return utilisateur_peut_consulter_historique_confidentiel(
+            user, courrier
+        )
+
+    return autorisation_confidentielle_valide(
+        user, courrier, "HISTORIQUE"
+    )
+
+
+# ============================================================
+# DROITS DE CONSULTATION
+# ============================================================
+
+def verifier_droit_consultation(user):
+    if not utilisateur_peut_consulter(user):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de consultation."
+        )
+
+    return obtenir_profil(user)
+
+
+def verifier_droit_modification(user, courrier=None):
+    profil = obtenir_profil(user)
+
+    if profil == "ADMIN":
+        if courrier and courrier_est_confidentiel(courrier):
+            raise PermissionDenied(
+                "L'administrateur technique ne peut pas modifier "
+                "le contenu d'un courrier confidentiel."
+            )
+        return profil
+
+    if not utilisateur_peut_modifier_courrier(user, courrier):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de modification."
+        )
+
+    return profil
+
+
+# ============================================================
+# FILTRAGE DES COURRIERS
+# ============================================================
+
+def courriers_accessibles(user):
+    profil = verifier_droit_consultation(user)
+
+    qs = Courrier.objects.select_related(
+        "service",
+        "responsable",
+        "cree_par",
+        "categorie",
+        "destinataire_confidentiel",
+    ).distinct()
+
+    if profil == "ADMIN":
+        return qs.filter(
+            confidentialite=Courrier.Confidentialite.NORMALE
+        ).exclude(
+            priorite=Courrier.Priorite.CONFIDENTIELLE
+        )
+
+    if profil in ["ACCUEIL", "SECRETARIAT"]:
+        return qs
+
+    if profil == "DIRECTION":
+        services_ids = ResponsableService.objects.filter(
+            utilisateur=user,
+            actif=True,
+            service__actif=True,
+        ).values_list("service_id", flat=True)
+
+        services_anciens = Service.objects.filter(
+            responsable=user,
+            actif=True,
+        ).values_list("id", flat=True)
+
+        ids = set(services_ids) | set(services_anciens)
+
+        return qs.filter(service_id__in=ids)
+
+    if profil == "RESPONSABLE":
+        # Meme regle qu'avant (service + categories autorisees), calculee
+        # en base au lieu d'une boucle courrier par courrier.
+        from .permissions import responsabilites_actives
+
+        services = services_accessibles_du_responsable(user)
+        ids_services = list(services.values_list("pk", flat=True))
+
+        condition = Q(pk__in=[])
+
+        for service_id in Service.objects.filter(
+            responsable=user,
+            actif=True,
+            pk__in=ids_services,
+        ).values_list("pk", flat=True):
+            condition |= Q(service_id=service_id)
+
+        for responsabilite in responsabilites_actives(user):
+            if responsabilite.toutes_categories:
+                condition |= Q(service_id=responsabilite.service_id)
+            else:
+                condition |= Q(
+                    service_id=responsabilite.service_id,
+                    categorie_id__in=list(
+                        responsabilite.categories.values_list("pk", flat=True)
+                    ),
+                )
+
+        return qs.filter(condition, service__in=services)
+
+    if profil == "AGENT":
+        propre = Q(
+            affectations__agent=user,
+            affectations__active=True,
+            affectations__type_affectation="AGENT",
+        )
+        temporaire = acces_temporaire_q(user)
+
+        if temporaire is not None:
+            propre = propre | temporaire
+
+        return qs.filter(propre).distinct()
+
+    return qs.none()
+
+
+def obtenir_courrier_accessible(user, pk):
+    courrier = get_object_or_404(
+        Courrier.objects.select_related(
+            "service",
+            "responsable",
+            "categorie",
+            "destinataire_confidentiel",
+            "cree_par",
+        ),
+        pk=pk,
+    )
+
+    if not utilisateur_peut_voir_metadonnees(user, courrier):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de consulter ce courrier."
+        )
+
+    return courrier
+
+
+# ============================================================
+# HISTORIQUE
+# ============================================================
+
+def enregistrer_historique(
+    courrier,
+    utilisateur,
+    action,
+    details="",
+    motif="",
+    avant="",
+    apres="",
+):
+    Historique.objects.create(
+        courrier=courrier,
+        utilisateur=utilisateur,
+        action=action,
+        details=details,
+        motif=motif,
+        avant=avant,
+        apres=apres,
+    )
+
+
+# ============================================================
+# PIÈCES JOINTES ET VERSIONNEMENT
+# ============================================================
+
+def enregistrer_pieces_jointes(courrier, fichiers, utilisateur):
+    for fichier in fichiers:
+        precedente = (
+            PieceJointe.objects
+            .select_for_update()
+            .filter(
+                courrier=courrier,
+                nom_original__iexact=fichier.name,
+            )
+            .order_by("-version", "-pk")
+            .first()
+        )
+
+        nouvelle_version = precedente.version + 1 if precedente else 1
+
+        if precedente and precedente.active:
+            precedente.active = False
+            precedente.retire_par = utilisateur
+            precedente.retire_le = timezone.now()
+            precedente.motif_retrait = (
+                "Remplacé par une nouvelle version du fichier."
+            )
+            precedente.save(update_fields=[
+                "active",
+                "retire_par",
+                "retire_le",
+                "motif_retrait",
+            ])
+
+        PieceJointe.objects.create(
+            courrier=courrier,
+            fichier=fichier,
+            nom_original=fichier.name,
+            type_mime=getattr(fichier, "content_type", "") or "",
+            taille=fichier.size,
+            version=nouvelle_version,
+            version_precedente=precedente,
+            ajoute_par=utilisateur,
+        )
+
+
+# ============================================================
+# TABLEAU DE BORD
+# ============================================================
+
+@login_required
+def dashboard(request):
+    qs = courriers_accessibles(request.user)
+
+    context = {
+        "total": qs.count(),
+        "entrants": qs.filter(sens=Courrier.Sens.ENTRANT).count(),
+        "sortants": qs.filter(sens=Courrier.Sens.SORTANT).count(),
+
+        "en_cours": qs.filter(
+            statut__in=[
+                Courrier.Statut.TRANSMIS,
+                Courrier.Statut.EN_COURS,
+                Courrier.Statut.EN_ATTENTE,
+            ]
+        ).count(),
+
+        "traites": qs.filter(
+            statut__in=[
+                Courrier.Statut.TRAITE,
+                Courrier.Statut.CLOTURE,
+            ]
+        ).count(),
+
+        "recents": qs.order_by("-cree_le")[:8],
+
+        "en_retard": qs.filter(
+            date_limite__lt=timezone.localdate()
+        ).exclude(
+            statut__in=[
+                Courrier.Statut.TRAITE,
+                Courrier.Statut.CLOTURE,
+            ]
+        ).count(),
+
+        "profil": obtenir_profil(request.user),
+    }
+
+    return render(request, "courrier/dashboard.html", context)
+
+
+# ============================================================
+# LISTE DES COURRIERS
+# ============================================================
+
+@login_required
+def liste_courriers(request):
+    qs = courriers_accessibles(request.user)
+
+    q = request.GET.get("q", "").strip()
+    sens = request.GET.get("sens", "")
+    statut = request.GET.get("statut", "")
+    categorie = request.GET.get("categorie", "")
+    retard = request.GET.get("retard", "")
+
+    if retard == "1" or categorie == "en_retard":
+        qs = qs.filter(
+            date_limite__lt=timezone.localdate()
+        ).exclude(statut__in=["TRAITE", "CLOTURE"])
+        filtre_titre = "Courriers en retard"
+
+    elif categorie == "entrants":
+        qs = qs.filter(sens="ENTRANT")
+        filtre_titre = "Courriers entrants"
+
+    elif categorie == "sortants":
+        qs = qs.filter(sens="SORTANT")
+        filtre_titre = "Courriers sortants"
+
+    elif categorie == "en_cours":
+        qs = qs.filter(
+            statut__in=["TRANSMIS", "EN_COURS", "EN_ATTENTE"]
+        )
+        filtre_titre = "Courriers en cours de traitement"
+
+    elif categorie == "traites":
+        qs = qs.filter(statut__in=["TRAITE", "CLOTURE"])
+        filtre_titre = "Courriers traités / clôturés"
+
+    else:
+        filtre_titre = "Tous les courriers"
+
+    profil = obtenir_profil(request.user)
+
+    if q:
+        if profil in ["ACCUEIL", "SECRETARIAT"]:
+            normaux = qs.filter(
+                Q(confidentialite=Courrier.Confidentialite.NORMALE)
+                & ~Q(priorite=Courrier.Priorite.CONFIDENTIELLE)
+            ).filter(
+                Q(reference__icontains=q)
+                | Q(objet__icontains=q)
+                | Q(expediteur__icontains=q)
+                | Q(destinataire__icontains=q)
+            )
+
+            confidentiels = qs.filter(
+                Q(confidentialite__in=[
+                    Courrier.Confidentialite.CONFIDENTIELLE,
+                    Courrier.Confidentialite.STRICTE,
+                ])
+                | Q(priorite=Courrier.Priorite.CONFIDENTIELLE)
+            ).filter(reference__icontains=q)
+
+            qs = (normaux | confidentiels).distinct()
+        else:
+            qs = qs.filter(
+                Q(reference__icontains=q)
+                | Q(objet__icontains=q)
+                | Q(expediteur__icontains=q)
+                | Q(destinataire__icontains=q)
+            )
+
+    if sens in ["ENTRANT", "SORTANT"]:
+        qs = qs.filter(sens=sens)
+
+    if statut:
+        qs = qs.filter(statut=statut)
+
+    nombre_par_page = request.GET.get("par_page", "10")
+    if nombre_par_page not in ["10", "25", "50", "100"]:
+        nombre_par_page = "10"
+
+    paginator = Paginator(
+        qs.distinct().order_by("-cree_le"),
+        int(nombre_par_page),
+    )
+
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    courriers_contenu_autorise = set()
+
+    for courrier in page_obj.object_list:
+        if (
+            not courrier_est_confidentiel(courrier)
+            or utilisateur_peut_voir_contenu(request.user, courrier)
+        ):
+            courriers_contenu_autorise.add(courrier.pk)
+
+    context = {
+        "courriers": page_obj,
+        "page_obj": page_obj,
+        "paginator": paginator,
+        "nombre_par_page": nombre_par_page,
+        "q": q,
+        "sens": sens,
+        "statut": statut,
+        "categorie": categorie,
+        "filtre_titre": filtre_titre,
+        "courriers_contenu_autorise": courriers_contenu_autorise,
+    }
+
+    return render(request, "courrier/liste.html", context)
+
+
+# ============================================================
+# NOUVEAU COURRIER
+# ============================================================
+
+@login_required
+def nouveau_courrier(request):
+    if not utilisateur_peut_enregistrer(request.user):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit d'enregistrement."
+        )
+
+    if request.method == "POST":
+        form = CourrierForm(
+            request.POST,
+            request.FILES,
+            user=request.user,
+        )
+        form.fields["retour"] = forms.IntegerField(
+            required=False,
+            widget=forms.HiddenInput(),
+        )
+
+        if form.is_valid():
+            obj = form.save(commit=False)
+            obj.cree_par = request.user
+
+            retour_id = form.cleaned_data.get("retour")
+            retour = None
+
+            if retour_id:
+                if obtenir_profil(request.user) not in [
+                    "ACCUEIL",
+                    "SECRETARIAT",
+                ]:
+                    raise PermissionDenied(
+                        "Seuls l'Accueil et le Secrétariat peuvent "
+                        "enregistrer un courrier retourné."
+                    )
+
+                retour = get_object_or_404(
+                    RetourCourrier.objects.select_related("courrier"),
+                    pk=retour_id,
+                    traite=False,
+                )
+
+                obtenir_courrier_accessible(
+                    request.user,
+                    retour.courrier_id,
+                )
+
+                if obj.sens != Courrier.Sens.ENTRANT:
+                    form.add_error(
+                        None,
+                        "Un courrier retourné doit être enregistré "
+                        "comme courrier entrant.",
+                    )
+
+            if obj.sens == Courrier.Sens.ENTRANT:
+                obj.service = None
+                obj.responsable = None
+                obj.date_expedition = None
+                obj.statut = Courrier.Statut.ENREGISTRE
+                obj.date_cloture = None
+
+            elif obj.sens == Courrier.Sens.SORTANT:
+                if not obj.date_expedition:
+                    form.add_error(
+                        "date_expedition",
+                        "La date d'expédition est obligatoire "
+                        "pour un courrier sortant.",
+                    )
+                else:
+                    obj.statut = Courrier.Statut.CLOTURE
+                    obj.date_cloture = obj.date_expedition
+                    obj.service = None
+                    obj.responsable = None
+
+            if not form.errors:
+                with transaction.atomic():
+                    if retour_id:
+                        retour = (
+                            RetourCourrier.objects
+                            .select_for_update()
+                            .filter(pk=retour_id, traite=False)
+                            .first()
+                        )
+                        if retour is None:
+                            raise PermissionDenied(
+                                "Ce retour a déjà été traité."
+                            )
+
+                    obj.save()
+                    form.save_m2m()
+
+                    enregistrer_pieces_jointes(
+                        obj,
+                        form.cleaned_data.get("documents", []),
+                        request.user,
+                    )
+
+                    if retour:
+                        retour.nouveau_courrier = obj
+                        retour.traite = True
+                        retour.save(update_fields=[
+                            "nouveau_courrier",
+                            "traite",
+                        ])
+
+                    enregistrer_historique(
+                        obj,
+                        request.user,
+                        "ENREGISTREMENT",
+                        details=(
+                            "Création du courrier à la suite d'un retour."
+                            if retour else "Création du courrier."
+                        ),
+                        apres=(
+                            f"Référence : {obj.reference}\n"
+                            f"Sens : {obj.get_sens_display()}\n"
+                            f"Objet : {obj.objet}"
+                        ),
+                    )
+
+                messages.success(
+                    request,
+                    f"Le courrier {obj.reference} a été enregistré.",
+                )
+                return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = CourrierForm(user=request.user)
+        form.fields["retour"] = forms.IntegerField(
+            required=False,
+            initial=request.GET.get("retour"),
+            widget=forms.HiddenInput(),
+        )
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "titre": "Nouveau courrier",
+            "libelle_bouton": "Enregistrer le courrier",
+        },
+    )
+
+
+# ============================================================
+# DÉTAIL DU COURRIER
+# ============================================================
+
+@login_required
+def detail_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+    profil = obtenir_profil(request.user)
+
+    confidentiel = courrier_est_confidentiel(obj)
+
+    peut_voir_contenu = utilisateur_peut_voir_contenu(
+        request.user, obj
+    )
+    peut_voir_pieces = utilisateur_peut_voir_pieces(
+        request.user, obj
+    )
+    peut_voir_historique = utilisateur_peut_voir_historique(
+        request.user, obj
+    )
+
+    if confidentiel:
+        if peut_voir_contenu:
+            journaliser_acces_confidentiel(
+                obj,
+                request.user,
+                "CONSULTATION_CONTENU",
+                "Consultation de la fiche détaillée.",
+            )
+
+        if peut_voir_pieces:
+            journaliser_acces_confidentiel(
+                obj,
+                request.user,
+                "CONSULTATION_PIECE",
+                "Consultation de la liste des pièces jointes.",
+            )
+
+        if peut_voir_historique:
+            journaliser_acces_confidentiel(
+                obj,
+                request.user,
+                "CONSULTATION_HISTORIQUE",
+                "Consultation de l'historique.",
+            )
+
+    peut_modifier = (
+        profil != "ADMIN"
+        and utilisateur_peut_modifier_courrier(request.user, obj)
+    )
+
+    affectations = Affectation.objects.none()
+
+    if peut_voir_contenu or not confidentiel:
+        affectations = (
+            Affectation.objects
+            .filter(courrier=obj)
+            .select_related(
+                "service",
+                "agent",
+                "transmis_par",
+                "confirme_par",
+            )
+            .order_by("-date_transmission")
+        )
+
+    pieces_jointes = PieceJointe.objects.none()
+
+    if peut_voir_pieces:
+        pieces_jointes = (
+            PieceJointe.objects
+            .filter(courrier=obj, active=True)
+            .select_related("ajoute_par")
+        )
+
+    historique = Historique.objects.none()
+
+    if peut_voir_historique:
+        historique = (
+            Historique.objects
+            .filter(courrier=obj)
+            .select_related("utilisateur")
+            .order_by("-date_action")
+        )
+
+    retours = RetourCourrier.objects.none()
+
+    if peut_voir_contenu or not confidentiel:
+        retours = (
+            RetourCourrier.objects
+            .filter(courrier=obj)
+            .select_related(
+                "retourne_par",
+                "nouveau_courrier",
+            )
+            .order_by("-date_retour")
+        )
+
+    peut_gerer_autorisations = (
+        confidentiel
+        and utilisateur_peut_gerer_autorisations_confidentielles(
+            request.user, obj
+        )
+    )
+
+    # ========================================================
+    # NOUVEAU : DROIT DE CONFIRMER LA RÉCEPTION
+    # ========================================================
+
+    peut_confirmer_reception = False
+
+    if (
+        profil in ["RESPONSABLE", "DIRECTION"]
+        and obj.service_id
+        and utilisateur_est_responsable_du_service(
+            request.user, obj.service
+        )
+    ):
+        affectation_service = (
+            Affectation.objects
+            .filter(
+                courrier=obj,
+                service=obj.service,
+                agent__isnull=True,
+                type_affectation=Affectation.TypeAffectation.SERVICE,
+                active=True,
+            )
+            .order_by("-date_transmission", "-pk")
+            .first()
+        )
+
+        peut_confirmer_reception = (
+            affectation_service is not None
+            and affectation_service.date_confirmation_reception is None
+        )
+
+    context = {
+        "courrier": obj,
+        "affectations": affectations,
+        "pieces_jointes": pieces_jointes,
+        "historique": historique,
+        "retours": retours,
+        "profil": profil,
+
+        "peut_modifier": peut_modifier,
+        "peut_voir_contenu": peut_voir_contenu,
+        "peut_voir_pieces": peut_voir_pieces,
+        "peut_voir_historique": peut_voir_historique,
+        "peut_gerer_autorisations": peut_gerer_autorisations,
+
+        # Variable utilisée par le bouton du template detail.html
+        "peut_confirmer_reception": peut_confirmer_reception,
+
+        "peut_transmettre": utilisateur_peut_transmettre(
+            request.user, obj
+        ),
+        "peut_affecter_agent": utilisateur_peut_affecter_agent(
+            request.user, obj
+        ),
+        "peut_traiter": utilisateur_peut_traiter_courrier(
+            request.user, obj
+        ),
+        "peut_cloturer": utilisateur_peut_cloturer_courrier(
+            request.user, obj
+        ),
+        "peut_retourner": utilisateur_peut_retourner_courrier(
+            request.user, obj
+        ),
+        "peut_reouvrir": utilisateur_peut_reouvrir_courrier(
+            request.user, obj
+        ),
+
+        "peut_ajouter_piece_jointe": (
+            peut_voir_pieces
+            and (
+                utilisateur_peut_modifier_courrier(request.user, obj)
+                or utilisateur_peut_traiter_courrier(request.user, obj)
+            )
+        ),
+    }
+
+    return render(
+        request,
+        "courrier/detail.html",
+        context,
+    )
+
+
+# ============================================================
+# MODIFICATION
+# ============================================================
+
+@login_required
+def modifier_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+    profil = obtenir_profil(request.user)
+
+    if not utilisateur_peut_modifier_courrier(request.user, obj):
+        raise PermissionDenied("Vous ne pouvez pas modifier ce courrier.")
+
+    if request.method == "POST":
+        form = CourrierForm(
+            request.POST,
+            request.FILES,
+            instance=obj,
+            user=request.user,
+        )
+
+        if form.is_valid():
+            ancien_service = obj.service
+            ancienne_reference = obj.reference
+
+            with transaction.atomic():
+                modification = form.save(commit=False)
+
+                modification.sens = obj.sens
+                modification.statut = obj.statut
+                modification.date_cloture = obj.date_cloture
+                modification.courrier_origine = obj.courrier_origine
+
+                if profil != "ADMIN":
+                    modification.service = ancien_service
+                    modification.responsable = obj.responsable
+                    modification.date_expedition = obj.date_expedition
+
+                modification.save()
+                form.save_m2m()
+
+                enregistrer_pieces_jointes(
+                    obj,
+                    form.cleaned_data.get("documents", []),
+                    request.user,
+                )
+
+                enregistrer_historique(
+                    obj,
+                    request.user,
+                    "MODIFICATION",
+                    details="Modification de la fiche courrier.",
+                    avant=f"Référence : {ancienne_reference}",
+                    apres=f"Objet : {obj.objet}",
+                )
+
+            messages.success(request, "Le courrier a été modifié.")
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = CourrierForm(instance=obj, user=request.user)
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Modifier le courrier",
+            "libelle_bouton": "Enregistrer les modifications",
+        },
+    )
+
+
+# ============================================================
+# TRANSMISSION À UN SERVICE
+# ============================================================
+
+@login_required
+def transmettre_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_transmettre(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de transmettre ce courrier."
+        )
+
+    if (
+        obj.sens != Courrier.Sens.ENTRANT
+        or obj.statut != Courrier.Statut.ENREGISTRE
+    ):
+        raise PermissionDenied(
+            "Seul un courrier entrant enregistré et non transmis "
+            "peut être transmis."
+        )
+
+    if request.method == "POST":
+        form = AffectationForm(
+            request.POST, user=request.user, courrier=obj
+        )
+
+        if form.is_valid():
+            service = form.cleaned_data["service"]
+
+            if not service.actif:
+                form.add_error("service", "Ce service n'est plus actif.")
+
+            if not form.errors:
+                with transaction.atomic():
+                    courrier = Courrier.objects.select_for_update().get(
+                        pk=obj.pk
+                    )
+
+                    if courrier.statut != Courrier.Statut.ENREGISTRE:
+                        raise PermissionDenied(
+                            "Ce courrier a déjà été transmis."
+                        )
+
+                    affectation = Affectation(
+                        courrier=courrier,
+                        service=service,
+                        agent=None,
+                        type_affectation=Affectation.TypeAffectation.SERVICE,
+                        transmis_par=request.user,
+                        instruction=form.cleaned_data.get("instruction", ""),
+                        date_limite=form.cleaned_data.get("date_limite"),
+                        active=True,
+                    )
+                    affectation.save()
+
+                    courrier.service = service
+                    courrier.responsable = service.responsable
+                    courrier.statut = Courrier.Statut.TRANSMIS
+                    courrier.save(update_fields=[
+                        "service", "responsable", "statut", "modifie_le",
+                    ])
+
+                    enregistrer_historique(
+                        courrier,
+                        request.user,
+                        "TRANSMISSION",
+                        details=f"Courrier transmis au service {service.nom}.",
+                    )
+
+                messages.success(
+                    request,
+                    "Le courrier a été transmis au service sélectionné.",
+                )
+                return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = AffectationForm(user=request.user, courrier=obj)
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Transmettre le courrier",
+            "libelle_bouton": "Confirmer la transmission",
+        },
+    )
+
+
+# ============================================================
+# AFFECTATION À PLUSIEURS AGENTS
+# ============================================================
+
+@login_required
+def affecter_agent(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_affecter_agent(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne pouvez pas affecter ce courrier à un agent."
+        )
+
+    if not obj.service_id:
+        raise PermissionDenied(
+            "Ce courrier n'est rattaché à aucun service."
+        )
+
+    if request.method == "POST":
+        form = AffectationForm(
+            request.POST, user=request.user, courrier=obj
+        )
+
+        if form.is_valid():
+            service = form.cleaned_data["service"]
+            agents = form.cleaned_data["agents"]
+
+            if service.pk != obj.service_id:
+                form.add_error(
+                    "service",
+                    "L'affectation doit rester dans le service destinataire.",
+                )
+
+            if not agents:
+                form.add_error(
+                    "agents",
+                    "Veuillez sélectionner au moins un agent.",
+                )
+
+            if not form.errors:
+                with transaction.atomic():
+                    nouveaux_agents = []
+
+                    for agent in agents:
+                        deja_affecte = Affectation.objects.filter(
+                            courrier=obj,
+                            agent=agent,
+                            type_affectation="AGENT",
+                            active=True,
+                        ).exists()
+
+                        if deja_affecte:
+                            continue
+
+                        affectation = Affectation(
+                            courrier=obj,
+                            service=obj.service,
+                            agent=agent,
+                            type_affectation="AGENT",
+                            transmis_par=request.user,
+                            instruction=form.cleaned_data.get(
+                                "instruction", ""
+                            ),
+                            date_limite=form.cleaned_data.get("date_limite"),
+                            active=True,
+                        )
+                        affectation.save()
+                        nouveaux_agents.append(agent)
+
+                        enregistrer_historique(
+                            obj,
+                            request.user,
+                            "AFFECTATION_AGENT",
+                            details=(
+                                "Courrier affecté à "
+                                f"{agent.get_full_name() or agent.username}."
+                            ),
+                        )
+
+                if nouveaux_agents:
+                    messages.success(
+                        request,
+                        f"{len(nouveaux_agents)} agent(s) affecté(s) au courrier.",
+                    )
+                else:
+                    messages.info(
+                        request,
+                        "Tous les agents sélectionnés possèdent déjà "
+                        "une affectation active.",
+                    )
+
+                return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = AffectationForm(
+            initial={"service": obj.service_id},
+            user=request.user,
+            courrier=obj,
+        )
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Affecter à un ou plusieurs agents",
+            "libelle_bouton": "Confirmer les affectations",
+        },
+    )
+
+
+# ============================================================
+# TRAITEMENT
+# ============================================================
+
+@login_required
+def traiter_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_traiter_courrier(request.user, obj):
+        raise PermissionDenied("Vous ne pouvez pas traiter ce courrier.")
+
+    profil = obtenir_profil(request.user)
+
+    affectations = Affectation.objects.filter(
+        courrier=obj,
+        active=True,
+    )
+
+    if profil == "AGENT":
+        propres = affectations.filter(
+            agent=request.user,
+            type_affectation="AGENT",
+        )
+
+        if propres.exists():
+            affectations = propres
+        elif agent_a_acces_temporaire(request.user, obj):
+            # Remplacement valide : on suit les affectations du collegue.
+            affectations = affectations.filter(type_affectation="AGENT")
+        else:
+            affectations = propres
+    elif profil == "RESPONSABLE":
+        affectations = affectations.filter(service=obj.service)
+
+    if not affectations.exists():
+        raise PermissionDenied(
+            "Aucune affectation active ne vous permet de traiter ce courrier."
+        )
+
+    if request.method == "POST":
+        form = TraitementForm(request.POST)
+
+        if form.is_valid():
+            nouveau_statut = form.cleaned_data["statut"]
+            observation = form.cleaned_data["observation"]
+
+            with transaction.atomic():
+                courrier = Courrier.objects.select_for_update().get(
+                    pk=obj.pk
+                )
+
+                affectations_verrouillees = affectations.select_for_update()
+
+                if not affectations_verrouillees.exists():
+                    raise PermissionDenied(
+                        "L'affectation n'est plus active."
+                    )
+
+                for affectation in affectations_verrouillees:
+                    affectation.statut = nouveau_statut
+                    affectation.observation = observation
+                    affectation.save(update_fields=[
+                        "statut", "observation",
+                    ])
+
+                courrier.statut = nouveau_statut
+                courrier.save(update_fields=["statut", "modifie_le"])
+
+                enregistrer_historique(
+                    courrier,
+                    request.user,
+                    "TRAITEMENT",
+                    details=(
+                        f"Statut : {nouveau_statut}"
+                        + libelle_remplacement(request.user, courrier)
+                    ),
+                    motif=observation,
+                )
+
+            messages.success(
+                request,
+                "Le traitement du courrier a été enregistré.",
+            )
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = TraitementForm(initial={
+            "statut": (
+                obj.statut
+                if obj.statut in ["EN_COURS", "EN_ATTENTE", "TRAITE"]
+                else "EN_COURS"
+            )
+        })
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Traitement du courrier",
+            "libelle_bouton": "Enregistrer le traitement",
+        },
+    )
+
+
+# ============================================================
+# RETOUR AU SECRÉTARIAT
+# ============================================================
+
+@login_required
+def retourner_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_retourner_courrier(request.user, obj):
+        raise PermissionDenied("Vous ne pouvez pas retourner ce courrier.")
+
+    if request.method == "POST":
+        form = RetourForm(request.POST)
+
+        if form.is_valid():
+            motif = form.cleaned_data["motif"]
+
+            with transaction.atomic():
+                courrier = Courrier.objects.select_for_update().get(
+                    pk=obj.pk
+                )
+
+                RetourCourrier.objects.create(
+                    courrier=courrier,
+                    retourne_par=request.user,
+                    motif=motif,
+                )
+
+                Affectation.objects.filter(
+                    courrier=courrier,
+                    active=True,
+                ).update(active=False)
+
+                courrier.service = None
+                courrier.responsable = None
+                courrier.statut = Courrier.Statut.ENREGISTRE
+                courrier.save(update_fields=[
+                    "service", "responsable", "statut", "modifie_le",
+                ])
+
+                enregistrer_historique(
+                    courrier,
+                    request.user,
+                    "RETOUR_SECRETARIAT",
+                    details="Courrier retourné au Secrétariat.",
+                    motif=motif,
+                )
+
+            messages.success(
+                request,
+                "Le courrier a été retourné à l'Accueil / au Secrétariat.",
+            )
+            return redirect("liste_courriers")
+
+    else:
+        form = RetourForm()
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Retourner le courrier",
+            "libelle_bouton": "Confirmer le retour",
+        },
+    )
+
+
+# ============================================================
+# CLÔTURE
+# ============================================================
+
+@login_required
+def cloturer_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_cloturer_courrier(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de clôturer ce courrier."
+        )
+
+    if obj.sens != Courrier.Sens.ENTRANT:
+        raise PermissionDenied(
+            "La clôture manuelle concerne uniquement les courriers entrants."
+        )
+
+    if obj.statut != Courrier.Statut.TRAITE:
+        messages.warning(
+            request,
+            "Le courrier doit être marqué comme traité avant sa clôture.",
+        )
+        return redirect("detail_courrier", pk=obj.pk)
+
+    if request.method == "POST":
+        with transaction.atomic():
+            courrier = Courrier.objects.select_for_update().get(pk=obj.pk)
+
+            if courrier.statut != Courrier.Statut.TRAITE:
+                raise PermissionDenied(
+                    "Le statut du courrier a changé. Actualisez la fiche."
+                )
+
+            courrier.statut = Courrier.Statut.CLOTURE
+            courrier.date_cloture = timezone.localdate()
+            courrier.save(update_fields=[
+                "statut", "date_cloture", "modifie_le",
+            ])
+
+            enregistrer_historique(
+                courrier,
+                request.user,
+                "CLOTURE",
+                details="Clôture du courrier.",
+            )
+
+        messages.success(
+            request,
+            f"Le courrier {obj.reference} a été clôturé.",
+        )
+        return redirect("detail_courrier", pk=obj.pk)
+
+    return render(
+        request,
+        "courrier/confirmation_cloture.html",
+        {
+            "courrier": obj,
+            "titre": "Clôturer le courrier",
+        },
+    )
+
+
+# ============================================================
+# RÉOUVERTURE
+# ============================================================
+
+@login_required
+def reouvrir_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_reouvrir_courrier(request.user, obj):
+        raise PermissionDenied("Vous ne pouvez pas rouvrir ce courrier.")
+
+    if obj.statut != Courrier.Statut.CLOTURE:
+        messages.warning(request, "Ce courrier n'est pas clôturé.")
+        return redirect("detail_courrier", pk=obj.pk)
+
+    if request.method == "POST":
+        form = MotifForm(request.POST)
+
+        if form.is_valid():
+            motif = form.cleaned_data["motif"]
+
+            with transaction.atomic():
+                courrier = Courrier.objects.select_for_update().get(
+                    pk=obj.pk
+                )
+
+                if courrier.statut != Courrier.Statut.CLOTURE:
+                    raise PermissionDenied(
+                        "Ce courrier n'est plus clôturé."
+                    )
+
+                courrier.statut = (
+                    Courrier.Statut.TRANSMIS
+                    if courrier.service_id
+                    else Courrier.Statut.ENREGISTRE
+                )
+                courrier.date_cloture = None
+                courrier.save(update_fields=[
+                    "statut", "date_cloture", "modifie_le",
+                ])
+
+                enregistrer_historique(
+                    courrier,
+                    request.user,
+                    "REOUVERTURE",
+                    details="Réouverture du courrier.",
+                    motif=motif,
+                )
+
+            messages.success(request, "Le courrier a été rouvert.")
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = MotifForm()
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Réouvrir le courrier",
+            "libelle_bouton": "Confirmer la réouverture",
+        },
+    )
+
+
+# ============================================================
+# AJOUT D'UNE PIÈCE JOINTE
+# ============================================================
+
+@login_required
+def ajouter_piece_jointe(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    peut_ajouter = (
+        utilisateur_peut_modifier_courrier(request.user, obj)
+        or utilisateur_peut_traiter_courrier(request.user, obj)
+    )
+
+    if not peut_ajouter:
+        raise PermissionDenied(
+            "Vous ne pouvez pas ajouter de pièce jointe à ce courrier."
+        )
+
+    if not utilisateur_peut_voir_pieces(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne disposez pas de l'autorisation de consulter "
+            "les pièces jointes de ce courrier."
+        )
+
+    if request.method == "POST":
+        form = PieceJointeForm(request.POST, request.FILES)
+
+        if form.is_valid():
+            fichier = form.cleaned_data["fichier"]
+
+            with transaction.atomic():
+                enregistrer_pieces_jointes(
+                    obj, [fichier], request.user
+                )
+
+                enregistrer_historique(
+                    obj,
+                    request.user,
+                    "AJOUT_PIECE_JOINTE",
+                    details=f"Ajout du fichier : {fichier.name}",
+                )
+
+            messages.success(request, "La pièce jointe a été ajoutée.")
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = PieceJointeForm()
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Ajouter une pièce jointe",
+            "libelle_bouton": "Ajouter le fichier",
+        },
+    )
+
+
+# ============================================================
+# RETRAIT LOGIQUE D'UNE PIÈCE JOINTE
+# ============================================================
+
+@login_required
+def retirer_piece_jointe(request, pk, piece_id):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_modifier_courrier(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne pouvez pas retirer cette pièce jointe."
+        )
+
+    if not utilisateur_peut_voir_pieces(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne disposez pas de l'autorisation nécessaire."
+        )
+
+    if request.method != "POST":
+        raise PermissionDenied(
+            "Cette opération doit être effectuée par formulaire."
+        )
+
+    form = MotifForm(request.POST)
+    if not form.is_valid():
+        messages.error(
+            request,
+            "Veuillez renseigner un motif valide pour le retrait.",
+        )
+        return redirect("detail_courrier", pk=obj.pk)
+
+    motif = form.cleaned_data["motif"]
+
+    with transaction.atomic():
+        piece = get_object_or_404(
+            PieceJointe.objects.select_for_update(),
+            pk=piece_id,
+            courrier=obj,
+            active=True,
+        )
+
+        piece.active = False
+        piece.retire_par = request.user
+        piece.retire_le = timezone.now()
+        piece.motif_retrait = motif
+        piece.save(update_fields=[
+            "active", "retire_par", "retire_le", "motif_retrait",
+        ])
+
+        enregistrer_historique(
+            obj,
+            request.user,
+            "RETRAIT_PIECE_JOINTE",
+            details=f"Retrait logique du fichier : {piece.nom_original}",
+            motif=motif,
+        )
+
+    messages.success(
+        request,
+        "La pièce jointe a été retirée de la fiche. "
+        "Le fichier n'a pas été supprimé physiquement.",
+    )
+    return redirect("detail_courrier", pk=obj.pk)
+
+
+# ============================================================
+# CONFIRMATION DE RÉCEPTION
+# ============================================================
+
+@login_required
+def confirmer_reception(request, pk):
+    if request.method != "POST":
+        raise PermissionDenied(
+            "La confirmation de réception doit être effectuée par formulaire."
+        )
+
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if obtenir_profil(request.user) not in ["RESPONSABLE", "DIRECTION"]:
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de confirmer la réception."
+        )
+
+    if (
+        not obj.service_id
+        or not utilisateur_est_responsable_du_service(
+            request.user, obj.service
+        )
+    ):
+        raise PermissionDenied(
+            "Vous n'êtes pas responsable du service destinataire."
+        )
+
+    with transaction.atomic():
+        courrier = (
+            Courrier.objects
+            .select_for_update()
+            .select_related("service")
+            .get(pk=obj.pk)
+        )
+
+        if not utilisateur_est_responsable_du_service(
+            request.user, courrier.service
+        ):
+            raise PermissionDenied
+
+        affectation = (
+            Affectation.objects
+            .select_for_update()
+            .filter(
+                courrier=courrier,
+                service=courrier.service,
+                agent__isnull=True,
+                type_affectation=Affectation.TypeAffectation.SERVICE,
+                active=True,
+            )
+            .order_by("-date_transmission", "-pk")
+            .first()
+        )
+
+        if not affectation:
+            raise PermissionDenied(
+                "Aucune transmission active ne permet "
+                "de confirmer la réception."
+            )
+
+        if affectation.date_confirmation_reception:
+            messages.info(
+                request,
+                "La réception de ce courrier a déjà été confirmée.",
+            )
+            return redirect("detail_courrier", pk=courrier.pk)
+
+        affectation.date_confirmation_reception = timezone.now()
+        affectation.confirme_par = request.user
+        affectation.save(update_fields=[
+            "date_confirmation_reception", "confirme_par",
+        ])
+
+        enregistrer_historique(
+            courrier,
+            request.user,
+            "CONFIRMATION_RECEPTION",
+            details=(
+                "Réception confirmée par le responsable du service "
+                f"{courrier.service.nom}."
+            ),
+        )
+
+    messages.success(
+        request,
+        "La réception du courrier a été confirmée.",
+    )
+    return redirect("detail_courrier", pk=obj.pk)
+
+
+# ============================================================
+# GESTION DES AUTORISATIONS CONFIDENTIELLES
+# ============================================================
+
+@login_required
+def gerer_autorisations_confidentielles(request, pk):
+    courrier = obtenir_courrier_accessible(request.user, pk)
+
+    if not courrier_est_confidentiel(courrier):
+        raise PermissionDenied(
+            "Ce courrier n'est pas classé confidentiel."
+        )
+
+    if not utilisateur_peut_gerer_autorisations_confidentielles(
+        request.user, courrier
+    ):
+        raise PermissionDenied(
+            "Vous ne pouvez pas gérer les autorisations de ce courrier."
+        )
+
+    autorisations = AutorisationConfidentialite.objects.filter(
+        courrier=courrier,
+    ).select_related(
+        "utilisateur",
+        "autorise_par",
+        "revoque_par",
+    ).order_by("-date_creation")
+
+    if request.method == "POST":
+        form = AutorisationConfidentialiteForm(
+            request.POST,
+            demandeur=request.user,
+        )
+
+        if form.is_valid():
+            utilisateur = form.cleaned_data["utilisateur"]
+            type_acces = form.cleaned_data["type_acces"]
+            motif = form.cleaned_data["motif"]
+            date_fin = form.cleaned_data.get("date_fin")
+
+            if utilisateur.pk == request.user.pk:
+                form.add_error(
+                    "utilisateur",
+                    "Vous ne pouvez pas vous attribuer une autorisation.",
+                )
+
+            if not utilisateur.is_active:
+                form.add_error(
+                    "utilisateur",
+                    "Cet utilisateur n'est pas actif.",
+                )
+
+            if not form.errors:
+                with transaction.atomic():
+                    doublon = AutorisationConfidentialite.objects.filter(
+                        courrier=courrier,
+                        utilisateur=utilisateur,
+                        type_acces=type_acces,
+                        actif=True,
+                        date_revocation__isnull=True,
+                    ).filter(
+                        Q(date_fin__isnull=True)
+                        | Q(date_fin__gt=timezone.now())
+                    ).exists()
+
+                    if doublon:
+                        form.add_error(
+                            None,
+                            "Une autorisation active de ce type existe déjà "
+                            "pour cet utilisateur.",
+                        )
+                    else:
+                        AutorisationConfidentialite.objects.create(
+                            courrier=courrier,
+                            utilisateur=utilisateur,
+                            type_acces=type_acces,
+                            autorise_par=request.user,
+                            motif=motif,
+                            date_debut=timezone.now(),
+                            date_fin=date_fin,
+                            actif=True,
+                        )
+
+                        enregistrer_historique(
+                            courrier,
+                            request.user,
+                            "AUTORISATION_CONFIDENTIALITE",
+                            details=(
+                                f"Autorisation {type_acces} accordée à "
+                                f"{utilisateur.get_full_name() or utilisateur.username}."
+                            ),
+                            motif=motif,
+                        )
+
+                        messages.success(
+                            request,
+                            "L'autorisation confidentielle a été accordée.",
+                        )
+                        return redirect(
+                            "gerer_autorisations_confidentielles",
+                            pk=courrier.pk,
+                        )
+
+    else:
+        form = AutorisationConfidentialiteForm(
+            demandeur=request.user,
+        )
+
+    return render(
+        request,
+        "courrier/autorisations_confidentielles.html",
+        {
+            "courrier": courrier,
+            "form": form,
+            "autorisations": autorisations,
+        },
+    )
+
+
+@login_required
+def revoquer_autorisation_confidentielle(
+    request,
+    pk,
+    autorisation_id,
+):
+    if request.method != "POST":
+        raise PermissionDenied(
+            "La révocation doit être effectuée par formulaire."
+        )
+
+    courrier = obtenir_courrier_accessible(request.user, pk)
+
+    if not courrier_est_confidentiel(courrier):
+        raise PermissionDenied(
+            "Ce courrier n'est pas classé confidentiel."
+        )
+
+    if not utilisateur_peut_gerer_autorisations_confidentielles(
+        request.user, courrier
+    ):
+        raise PermissionDenied(
+            "Vous ne pouvez pas révoquer cette autorisation."
+        )
+
+    with transaction.atomic():
+        autorisation = get_object_or_404(
+            AutorisationConfidentialite.objects.select_for_update(),
+            pk=autorisation_id,
+            courrier=courrier,
+            actif=True,
+            date_revocation__isnull=True,
+        )
+
+        autorisation.actif = False
+        autorisation.revoque_par = request.user
+        autorisation.date_revocation = timezone.now()
+        autorisation.save(update_fields=[
+            "actif",
+            "revoque_par",
+            "date_revocation",
+        ])
+
+        enregistrer_historique(
+            courrier,
+            request.user,
+            "REVOCATION_AUTORISATION_CONFIDENTIALITE",
+            details=(
+                f"Révocation de l'autorisation "
+                f"{autorisation.type_acces} accordée à "
+                f"{autorisation.utilisateur.username}."
+            ),
+            motif="Révocation d'une autorisation confidentielle.",
+        )
+
+    messages.success(
+        request,
+        "L'autorisation confidentielle a été révoquée.",
+    )
+    return redirect(
+        "gerer_autorisations_confidentielles",
+        pk=courrier.pk,
+    )
+
+
+# ============================================================
+# TÉLÉCHARGEMENT DU DOCUMENT PRINCIPAL
+# ============================================================
+
+@login_required
+def telecharger_document_courrier(request, pk):
+    courrier = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_voir_contenu(request.user, courrier):
+        raise PermissionDenied(
+            "Vous ne pouvez pas consulter le document principal."
+        )
+
+    if not courrier.document:
+        raise Http404("Document introuvable.")
+
+    if courrier_est_confidentiel(courrier):
+        journaliser_acces_confidentiel(
+            courrier,
+            request.user,
+            "CONSULTATION_CONTENU",
+            "Téléchargement du document principal.",
+        )
+
+    nom = Path(courrier.document.name).name
+
+    return FileResponse(
+        courrier.document.open("rb"),
+        as_attachment=True,
+        filename=nom,
+    )
+
+
+# ============================================================
+# TÉLÉCHARGEMENT D'UNE PIÈCE JOINTE
+# ============================================================
+
+@login_required
+def telecharger_piece_jointe(request, pk, piece_id):
+    courrier = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_voir_pieces(request.user, courrier):
+        raise PermissionDenied(
+            "Vous ne pouvez pas consulter les pièces jointes."
+        )
+
+    piece = get_object_or_404(
+        PieceJointe,
+        pk=piece_id,
+        courrier=courrier,
+        active=True,
+    )
+
+    if not piece.fichier:
+        raise Http404("Fichier introuvable.")
+
+    if courrier_est_confidentiel(courrier):
+        journaliser_acces_confidentiel(
+            courrier,
+            request.user,
+            "CONSULTATION_PIECE",
+            "Téléchargement d'une pièce jointe.",
+        )
+
+    nom = Path(piece.fichier.name).name
+
+    return FileResponse(
+        piece.fichier.open("rb"),
+        as_attachment=True,
+        filename=nom,
+    )

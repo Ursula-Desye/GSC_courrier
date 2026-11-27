@@ -1,0 +1,6586 @@
+\n\n==========================================================================================\nFICHIER : config/urls.py\n==========================================================================================\nfrom django.contrib import admin
+from django.urls import path, include
+from django.contrib.auth import views as auth_views
+
+from courrier.views import dashboard
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+
+    path(
+        "login/",
+        auth_views.LoginView.as_view(
+            template_name="registration/login.html"
+        ),
+        name="login",
+    ),
+
+    path("logout/", auth_views.LogoutView.as_view(), name="logout"),
+
+    path("", dashboard, name="dashboard"),
+
+    path("courriers/", include("courrier.urls")),
+]\n\n\n==========================================================================================\nFICHIER : courrier/admin.py\n==========================================================================================\n
+from django.contrib import admin
+
+from .models import (
+    Service,
+    CompteurReference,
+    CategorieCourrier,
+    Courrier,
+    Affectation,
+    DelegationTransmission,
+    RetourCourrier,
+    PieceJointe,
+    BordereauTransmission,
+    LigneBordereau,
+    ReceptionBordereau,
+    Historique,
+    ParametreGSC,
+)
+
+
+# =====================================================
+# PERSONNALISATION DE L'ADMINISTRATION GSC
+# =====================================================
+
+admin.site.site_header = "GSC - Gestion et Suivi du Courrier"
+admin.site.site_title = "Administration GSC"
+admin.site.index_title = "Administration et traçabilité"
+
+
+# =====================================================
+# CLASSE DE BASE
+# INTERDICTION DE SUPPRESSION PHYSIQUE
+# =====================================================
+
+class GSCAdmin(admin.ModelAdmin):
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+# =====================================================
+# CLASSE DES MODELES EN LECTURE SEULE
+# =====================================================
+
+class GSCReadOnlyAdmin(GSCAdmin):
+
+    def get_readonly_fields(self, request, obj=None):
+        return [
+            field.name
+            for field in self.model._meta.fields
+        ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return super().has_view_permission(request, obj)
+
+
+# =====================================================
+# SERVICES
+# =====================================================
+
+@admin.register(Service)
+class ServiceAdmin(GSCAdmin):
+
+    list_display = (
+        "nom",
+        "responsable",
+        "actif",
+    )
+
+    list_filter = ("actif",)
+
+    search_fields = (
+        "nom",
+        "description",
+        "responsable__username",
+        "responsable__first_name",
+        "responsable__last_name",
+    )
+
+    list_select_related = ("responsable",)
+    ordering = ("nom",)
+    list_per_page = 25
+
+
+# =====================================================
+# CATEGORIES
+# =====================================================
+
+@admin.register(CategorieCourrier)
+class CategorieCourrierAdmin(GSCAdmin):
+
+    list_display = (
+        "nom",
+        "actif",
+    )
+
+    list_filter = ("actif",)
+    search_fields = ("nom", "description")
+    ordering = ("nom",)
+    list_per_page = 25
+
+
+# =====================================================
+# COURRIERS
+# CONSULTATION UNIQUEMENT
+# =====================================================
+
+@admin.register(Courrier)
+class CourrierAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "reference",
+        "sens",
+        "date_courrier",
+        "expediteur",
+        "destinataire",
+        "objet",
+        "service",
+        "statut",
+        "priorite",
+        "confidentialite",
+    )
+
+    list_filter = (
+        "sens",
+        "statut",
+        "priorite",
+        "confidentialite",
+        "service",
+        "date_courrier",
+    )
+
+    search_fields = (
+        "reference",
+        "objet",
+        "description",
+        "expediteur",
+        "destinataire",
+    )
+
+    list_select_related = (
+        "service",
+        "responsable",
+        "cree_par",
+        "categorie",
+    )
+
+    ordering = ("-cree_le",)
+    list_per_page = 25
+
+
+# =====================================================
+# AFFECTATIONS
+# CONSULTATION UNIQUEMENT
+# =====================================================
+
+@admin.register(Affectation)
+class AffectationAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "courrier",
+        "service",
+        "agent",
+        "transmis_par",
+        "date_transmission",
+        "date_limite",
+        "statut",
+        "active",
+        "date_confirmation_reception",
+    )
+
+    list_filter = (
+        "service",
+        "statut",
+        "active",
+        "date_transmission",
+    )
+
+    search_fields = (
+        "courrier__reference",
+        "courrier__objet",
+        "service__nom",
+        "agent__username",
+        "transmis_par__username",
+    )
+
+    list_select_related = (
+        "courrier",
+        "service",
+        "agent",
+        "transmis_par",
+        "confirme_par",
+    )
+
+    ordering = ("-date_transmission",)
+    list_per_page = 25
+
+
+# =====================================================
+# DELEGATIONS TEMPORAIRES
+# =====================================================
+
+@admin.register(DelegationTransmission)
+class DelegationTransmissionAdmin(GSCAdmin):
+
+    list_display = (
+        "utilisateur",
+        "autorise_par",
+        "date_debut",
+        "date_fin",
+        "actif",
+    )
+
+    list_filter = (
+        "actif",
+        "date_debut",
+        "date_fin",
+    )
+
+    search_fields = (
+        "utilisateur__username",
+        "utilisateur__first_name",
+        "utilisateur__last_name",
+        "autorise_par__username",
+        "motif",
+    )
+
+    list_select_related = (
+        "utilisateur",
+        "autorise_par",
+    )
+
+    ordering = ("-date_debut",)
+    list_per_page = 25
+
+    def get_readonly_fields(self, request, obj=None):
+
+        champs = [
+            "autorise_par",
+            "cree_le",
+        ]
+
+        if obj:
+            champs.extend([
+                "utilisateur",
+                "date_debut",
+                "date_fin",
+                "motif",
+            ])
+
+        return champs
+
+    def save_model(self, request, obj, form, change):
+
+        if not change:
+            obj.autorise_par = request.user
+
+        super().save_model(request, obj, form, change)
+
+
+# =====================================================
+# RETOURS AU SECRETARIAT
+# CONSULTATION UNIQUEMENT
+# =====================================================
+
+@admin.register(RetourCourrier)
+class RetourCourrierAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "courrier",
+        "retourne_par",
+        "date_retour",
+        "traite",
+        "nouveau_courrier",
+    )
+
+    list_filter = (
+        "traite",
+        "date_retour",
+    )
+
+    search_fields = (
+        "courrier__reference",
+        "motif",
+        "retourne_par__username",
+    )
+
+    list_select_related = (
+        "courrier",
+        "retourne_par",
+        "nouveau_courrier",
+    )
+
+    ordering = ("-date_retour",)
+    list_per_page = 25
+
+
+# =====================================================
+# PIECES JOINTES ET VERSIONS
+# CONSULTATION UNIQUEMENT
+# =====================================================
+
+@admin.register(PieceJointe)
+class PieceJointeAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "nom_original",
+        "courrier",
+        "version",
+        "active",
+        "ajoute_par",
+        "ajoute_le",
+        "retire_par",
+        "retire_le",
+    )
+
+    list_filter = (
+        "active",
+        "ajoute_le",
+    )
+
+    search_fields = (
+        "nom_original",
+        "courrier__reference",
+    )
+
+    list_select_related = (
+        "courrier",
+        "ajoute_par",
+        "retire_par",
+        "version_precedente",
+    )
+
+    ordering = ("-ajoute_le",)
+    list_per_page = 25
+
+
+# =====================================================
+# BORDEREAUX COLLECTIFS
+# CONSULTATION UNIQUEMENT
+# =====================================================
+
+@admin.register(BordereauTransmission)
+class BordereauTransmissionAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "id",
+        "service",
+        "date_transmission",
+        "transmis_par",
+        "statut",
+    )
+
+    list_filter = (
+        "service",
+        "statut",
+        "date_transmission",
+    )
+
+    list_select_related = (
+        "service",
+        "transmis_par",
+    )
+
+    ordering = ("-date_transmission",)
+    list_per_page = 25
+
+
+# =====================================================
+# LIGNES DES BORDEREAUX
+# =====================================================
+
+@admin.register(LigneBordereau)
+class LigneBordereauAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "bordereau",
+        "courrier",
+    )
+
+    search_fields = (
+        "courrier__reference",
+        "courrier__objet",
+    )
+
+    list_select_related = (
+        "bordereau",
+        "courrier",
+    )
+
+
+# =====================================================
+# RECEPTIONS DES BORDEREAUX
+# =====================================================
+
+@admin.register(ReceptionBordereau)
+class ReceptionBordereauAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "bordereau",
+        "service",
+        "receptionne_par",
+        "date_reception",
+    )
+
+    list_filter = (
+        "service",
+        "date_reception",
+    )
+
+    list_select_related = (
+        "bordereau",
+        "service",
+        "receptionne_par",
+    )
+
+
+# =====================================================
+# HISTORIQUE
+# CONSULTATION UNIQUEMENT
+# =====================================================
+
+@admin.register(Historique)
+class HistoriqueAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "courrier",
+        "utilisateur",
+        "action",
+        "date_action",
+    )
+
+    list_filter = (
+        "action",
+        "date_action",
+    )
+
+    search_fields = (
+        "courrier__reference",
+        "courrier__objet",
+        "utilisateur__username",
+        "action",
+        "details",
+        "motif",
+    )
+
+    list_select_related = (
+        "courrier",
+        "utilisateur",
+    )
+
+    ordering = ("-date_action",)
+    list_per_page = 50
+
+
+# =====================================================
+# COMPTEURS DE REFERENCES
+# CONSULTATION UNIQUEMENT
+# =====================================================
+
+@admin.register(CompteurReference)
+class CompteurReferenceAdmin(GSCReadOnlyAdmin):
+
+    list_display = (
+        "sens",
+        "annee",
+        "dernier_numero",
+    )
+
+    list_filter = (
+        "sens",
+        "annee",
+    )
+
+    ordering = (
+        "-annee",
+        "sens",
+    )
+
+
+# =====================================================
+# PARAMETRES GENERAUX
+# =====================================================
+
+@admin.register(ParametreGSC)
+class ParametreGSCAdmin(GSCAdmin):
+
+    list_display = (
+        "delai_defaut_jours",
+        "duree_conservation_annees",
+        "alerte_retard_active",
+        "notification_email_active",
+        "modifie_par",
+        "modifie_le",
+    )
+
+    readonly_fields = (
+        "modifie_par",
+        "modifie_le",
+    )
+
+    list_per_page = 25
+
+    def save_model(self, request, obj, form, change):
+
+        obj.modifie_par = request.user
+
+        super().save_model(request, obj, form, change)
+\n\n\n==========================================================================================\nFICHIER : courrier/apps.py\n==========================================================================================\nfrom django.apps import AppConfig
+class CourrierConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "courrier"
+\n\n\n==========================================================================================\nFICHIER : courrier/models.py\n==========================================================================================\n
+from django.conf import settings
+from django.db import models, transaction
+from django.utils import timezone
+
+
+# =====================================================
+# SERVICE
+# =====================================================
+
+class Service(models.Model):
+    nom = models.CharField(
+        max_length=120,
+        unique=True,
+        verbose_name="Nom du service"
+    )
+
+    description = models.TextField(
+        blank=True,
+        verbose_name="Description"
+    )
+
+    responsable = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="services_diriges",
+        null=True,
+        blank=True,
+        verbose_name="Responsable du service"
+    )
+
+    actif = models.BooleanField(
+        default=True,
+        verbose_name="Service actif"
+    )
+
+    class Meta:
+        ordering = ["nom"]
+        verbose_name = "Service"
+        verbose_name_plural = "Services"
+
+    def __str__(self):
+        return self.nom
+
+
+# =====================================================
+# COMPTEUR DES REFERENCES
+# =====================================================
+
+class CompteurReference(models.Model):
+    sens = models.CharField(max_length=10)
+    annee = models.PositiveIntegerField()
+    dernier_numero = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["sens", "annee"],
+                name="unique_compteur_sens_annee"
+            )
+        ]
+        verbose_name = "Compteur de référence"
+        verbose_name_plural = "Compteurs de références"
+
+    def __str__(self):
+        return f"{self.sens}-{self.annee}: {self.dernier_numero}"
+
+
+# =====================================================
+# CATEGORIE DE COURRIER
+# =====================================================
+
+class CategorieCourrier(models.Model):
+    nom = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name="Nom de la catégorie"
+    )
+
+    description = models.TextField(blank=True)
+    actif = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["nom"]
+        verbose_name = "Catégorie de courrier"
+        verbose_name_plural = "Catégories de courriers"
+
+    def __str__(self):
+        return self.nom
+
+
+# =====================================================
+# COURRIER
+# =====================================================
+
+class Courrier(models.Model):
+
+    class Sens(models.TextChoices):
+        ENTRANT = "ENTRANT", "Entrant"
+        SORTANT = "SORTANT", "Sortant"
+
+    class Priorite(models.TextChoices):
+        NORMALE = "NORMALE", "Normale"
+        URGENTE = "URGENTE", "Urgente"
+        TRES_URGENTE = "TRES_URGENTE", "Très urgente"
+        CONFIDENTIELLE = "CONFIDENTIELLE", "Confidentielle (ancienne valeur)"
+
+    class Confidentialite(models.TextChoices):
+        NORMALE = "NORMALE", "Normale"
+        CONFIDENTIELLE = "CONFIDENTIELLE", "Confidentielle"
+        STRICTE = "STRICTE", "Strictement confidentielle"
+
+    class Statut(models.TextChoices):
+        ENREGISTRE = "ENREGISTRE", "Enregistré"
+        TRANSMIS = "TRANSMIS", "Transmis"
+        EN_COURS = "EN_COURS", "En cours"
+        EN_ATTENTE = "EN_ATTENTE", "En attente"
+        TRAITE = "TRAITE", "Traité"
+        CLOTURE = "CLOTURE", "Clôturé"
+
+    class ModeReception(models.TextChoices):
+        PHYSIQUE = "PHYSIQUE", "Courrier physique"
+        EMAIL = "EMAIL", "E-mail"
+        COURSIER = "COURSIER", "Coursier"
+        DEPOT = "DEPOT", "Dépôt direct"
+        AUTRE = "AUTRE", "Autre"
+
+    reference = models.CharField(
+        max_length=30,
+        unique=True,
+        blank=True
+    )
+
+    sens = models.CharField(
+        max_length=10,
+        choices=Sens.choices
+    )
+
+    date_courrier = models.DateField(default=timezone.localdate)
+
+    # Ancien champ conservé pour compatibilité.
+    date_reception_expedition = models.DateField(
+        default=timezone.localdate
+    )
+
+    mode_reception = models.CharField(
+        max_length=20,
+        choices=ModeReception.choices,
+        blank=True
+    )
+
+    date_reception_physique = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    nom_livreur = models.CharField(max_length=180, blank=True)
+
+    date_expedition = models.DateField(
+        null=True,
+        blank=True
+    )
+
+    expediteur = models.CharField(max_length=180)
+    destinataire = models.CharField(max_length=180)
+    objet = models.CharField(max_length=250)
+    description = models.TextField(blank=True)
+
+    categorie = models.ForeignKey(
+        CategorieCourrier,
+        on_delete=models.PROTECT,
+        related_name="courriers",
+        null=True,
+        blank=True
+    )
+
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name="courriers",
+        null=True,
+        blank=True
+    )
+
+    responsable = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="courriers_responsables",
+        null=True,
+        blank=True
+    )
+
+    priorite = models.CharField(
+        max_length=20,
+        choices=Priorite.choices,
+        default=Priorite.NORMALE
+    )
+
+    confidentialite = models.CharField(
+        max_length=20,
+        choices=Confidentialite.choices,
+        default=Confidentialite.NORMALE
+    )
+
+    statut = models.CharField(
+        max_length=20,
+        choices=Statut.choices,
+        default=Statut.ENREGISTRE
+    )
+
+    date_limite = models.DateField(null=True, blank=True)
+    date_cloture = models.DateField(null=True, blank=True)
+
+    document = models.FileField(
+        upload_to="courriers/%Y/%m/",
+        blank=True,
+        null=True
+    )
+
+    courrier_origine = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="courriers_reponse",
+        null=True,
+        blank=True
+    )
+
+    cree_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="courriers_crees"
+    )
+
+    cree_le = models.DateTimeField(auto_now_add=True)
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-cree_le"]
+        verbose_name = "Courrier"
+        verbose_name_plural = "Courriers"
+
+        permissions = [
+            ("transmettre_courrier", "Peut transmettre un courrier"),
+            ("cloturer_courrier", "Peut clôturer un courrier"),
+            ("traiter_courrier", "Peut traiter un courrier"),
+            ("retourner_courrier", "Peut retourner un courrier"),
+            ("reouvrir_courrier", "Peut rouvrir un courrier"),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.reference:
+            prefix = (
+                "ENT"
+                if self.sens == self.Sens.ENTRANT
+                else "SOR"
+            )
+
+            annee = timezone.localdate().year
+
+            with transaction.atomic():
+                compteur, cree = (
+                    CompteurReference.objects
+                    .select_for_update()
+                    .get_or_create(
+                        sens=self.sens,
+                        annee=annee,
+                        defaults={"dernier_numero": 0}
+                    )
+                )
+
+                if cree or compteur.dernier_numero == 0:
+                    anciennes_references = (
+                        Courrier.objects
+                        .filter(
+                            reference__startswith=f"{prefix}-{annee}-"
+                        )
+                        .values_list("reference", flat=True)
+                    )
+
+                    maximum = 0
+
+                    for ancienne in anciennes_references:
+                        try:
+                            numero = int(ancienne.rsplit("-", 1)[1])
+                            maximum = max(maximum, numero)
+                        except (ValueError, IndexError):
+                            continue
+
+                    compteur.dernier_numero = max(
+                        compteur.dernier_numero,
+                        maximum
+                    )
+
+                compteur.dernier_numero += 1
+                compteur.save(update_fields=["dernier_numero"])
+
+                self.reference = (
+                    f"{prefix}-{annee}-"
+                    f"{compteur.dernier_numero:06d}"
+                )
+
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.reference} – {self.objet}"
+
+
+# =====================================================
+# AFFECTATION / TRANSMISSION
+# =====================================================
+
+class Affectation(models.Model):
+    courrier = models.ForeignKey(
+        Courrier,
+        on_delete=models.PROTECT,
+        related_name="affectations"
+    )
+
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT
+    )
+
+    agent = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True
+    )
+
+    transmis_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="transmissions_effectuees"
+    )
+
+    date_transmission = models.DateTimeField(default=timezone.now)
+    instruction = models.TextField(blank=True)
+
+    date_limite = models.DateField(null=True, blank=True)
+
+    statut = models.CharField(max_length=30, default="TRANSMIS")
+    observation = models.TextField(blank=True)
+
+    active = models.BooleanField(
+        default=True,
+        verbose_name="Affectation active"
+    )
+
+    date_confirmation_reception = models.DateTimeField(
+        null=True,
+        blank=True
+    )
+
+    confirme_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="affectations_confirmees",
+        null=True,
+        blank=True
+    )
+
+    class Meta:
+        ordering = ["-date_transmission"]
+        verbose_name = "Affectation"
+        verbose_name_plural = "Affectations"
+
+    def __str__(self):
+        return f"{self.courrier.reference} - {self.service}"
+
+
+# =====================================================
+# DELEGATION TEMPORAIRE DE TRANSMISSION
+# =====================================================
+
+class DelegationTransmission(models.Model):
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="delegations_recues"
+    )
+
+    autorise_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="delegations_autorisees"
+    )
+
+    date_debut = models.DateTimeField()
+    date_fin = models.DateTimeField()
+    motif = models.TextField(blank=True)
+    actif = models.BooleanField(default=True)
+    cree_le = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_debut"]
+        verbose_name = "Délégation de transmission"
+        verbose_name_plural = "Délégations de transmission"
+
+    def est_valide(self):
+        maintenant = timezone.now()
+        return (
+            self.actif
+            and self.date_debut <= maintenant
+            and self.date_fin >= maintenant
+        )
+
+    def __str__(self):
+        return f"Délégation de {self.utilisateur}"
+
+
+# =====================================================
+# RETOUR D'UN COURRIER AU SECRETARIAT
+# =====================================================
+
+class RetourCourrier(models.Model):
+    courrier = models.ForeignKey(
+        Courrier,
+        on_delete=models.PROTECT,
+        related_name="retours"
+    )
+
+    retourne_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="courriers_retournes"
+    )
+
+    motif = models.TextField()
+    date_retour = models.DateTimeField(auto_now_add=True)
+
+    nouveau_courrier = models.ForeignKey(
+        Courrier,
+        on_delete=models.PROTECT,
+        related_name="origine_retour",
+        null=True,
+        blank=True
+    )
+
+    traite = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["-date_retour"]
+        verbose_name = "Retour de courrier"
+        verbose_name_plural = "Retours de courriers"
+
+    def __str__(self):
+        return f"Retour {self.courrier.reference}"
+
+
+# =====================================================
+# PIECES JOINTES ET VERSIONS
+# =====================================================
+
+class PieceJointe(models.Model):
+    courrier = models.ForeignKey(
+        Courrier,
+        on_delete=models.PROTECT,
+        related_name="pieces_jointes"
+    )
+
+    fichier = models.FileField(
+        upload_to="courriers/pieces_jointes/%Y/%m/"
+    )
+
+    nom_original = models.CharField(max_length=255)
+    type_mime = models.CharField(max_length=120, blank=True)
+    taille = models.PositiveBigIntegerField(default=0)
+    version = models.PositiveIntegerField(default=1)
+
+    version_precedente = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="versions_suivantes",
+        null=True,
+        blank=True
+    )
+
+    ajoute_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="pieces_jointes_ajoutees"
+    )
+
+    ajoute_le = models.DateTimeField(auto_now_add=True)
+    active = models.BooleanField(default=True)
+    motif_retrait = models.TextField(blank=True)
+
+    retire_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="pieces_jointes_retirees",
+        null=True,
+        blank=True
+    )
+
+    retire_le = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-ajoute_le"]
+        verbose_name = "Pièce jointe"
+        verbose_name_plural = "Pièces jointes"
+
+    def __str__(self):
+        return f"{self.nom_original} - {self.courrier.reference}"
+
+
+# =====================================================
+# BORDEREAU COLLECTIF DE TRANSMISSION
+# =====================================================
+
+class BordereauTransmission(models.Model):
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT,
+        related_name="bordereaux"
+    )
+
+    date_transmission = models.DateTimeField(default=timezone.now)
+
+    transmis_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="bordereaux_transmis"
+    )
+
+    statut = models.CharField(
+        max_length=20,
+        choices=[
+            ("TRANSMIS", "Transmis"),
+            ("RECEPTIONNE", "Réceptionné"),
+        ],
+        default="TRANSMIS"
+    )
+
+    class Meta:
+        ordering = ["-date_transmission"]
+        verbose_name = "Bordereau de transmission"
+        verbose_name_plural = "Bordereaux de transmission"
+
+    def __str__(self):
+        return f"Bordereau {self.pk} - {self.service}"
+
+
+class LigneBordereau(models.Model):
+    bordereau = models.ForeignKey(
+        BordereauTransmission,
+        on_delete=models.PROTECT,
+        related_name="lignes"
+    )
+
+    courrier = models.ForeignKey(
+        Courrier,
+        on_delete=models.PROTECT,
+        related_name="lignes_bordereaux"
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["bordereau", "courrier"],
+                name="unique_courrier_bordereau"
+            )
+        ]
+        verbose_name = "Ligne de bordereau"
+        verbose_name_plural = "Lignes de bordereau"
+
+    def __str__(self):
+        return f"{self.courrier.reference}"
+
+
+class ReceptionBordereau(models.Model):
+    bordereau = models.OneToOneField(
+        BordereauTransmission,
+        on_delete=models.PROTECT,
+        related_name="reception"
+    )
+
+    service = models.ForeignKey(
+        Service,
+        on_delete=models.PROTECT
+    )
+
+    receptionne_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT
+    )
+
+    date_reception = models.DateTimeField(auto_now_add=True)
+    observation = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Réception de bordereau"
+        verbose_name_plural = "Réceptions de bordereaux"
+
+    def __str__(self):
+        return f"Réception bordereau {self.bordereau_id}"
+
+
+# =====================================================
+# HISTORIQUE ET TRACABILITE
+# =====================================================
+
+class Historique(models.Model):
+    courrier = models.ForeignKey(
+        Courrier,
+        on_delete=models.PROTECT,
+        related_name="historique"
+    )
+
+    utilisateur = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT
+    )
+
+    action = models.CharField(max_length=100)
+    details = models.TextField(blank=True)
+    avant = models.TextField(blank=True)
+    apres = models.TextField(blank=True)
+    motif = models.TextField(blank=True)
+
+    date_action = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-date_action"]
+        verbose_name = "Historique"
+        verbose_name_plural = "Historiques"
+
+    def __str__(self):
+        return f"{self.action} - {self.courrier.reference}"
+
+
+# =====================================================
+# PARAMETRES GENERAUX GSC
+# =====================================================
+
+class ParametreGSC(models.Model):
+    delai_defaut_jours = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Délai de traitement par défaut"
+    )
+
+    duree_conservation_annees = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Durée de conservation (années)"
+    )
+
+    alerte_retard_active = models.BooleanField(default=True)
+
+    notification_email_active = models.BooleanField(default=True)
+
+    modifie_par = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True
+    )
+
+    modifie_le = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Paramètre GSC"
+        verbose_name_plural = "Paramètres GSC"
+
+    def __str__(self):
+        return "Paramètres généraux GSC"
+\n\n\n==========================================================================================\nFICHIER : courrier/forms.py\n==========================================================================================\nfrom django.utils import timezone
+from pathlib import Path
+
+from django import forms
+from django.contrib.auth import get_user_model
+
+from .models import (
+    Courrier,
+    Affectation,
+    Service,
+    CategorieCourrier,
+)
+
+
+User = get_user_model()
+
+
+# =====================================================
+# PARAMÈTRES DES FICHIERS
+# =====================================================
+
+EXTENSIONS_AUTORISEES = {
+    ".pdf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".jpg",
+    ".jpeg",
+    ".png",
+}
+
+TAILLE_MAX_FICHIER = 20 * 1024 * 1024  # 20 Mo
+
+
+# =====================================================
+# CHAMP DE SÉLECTION DE PLUSIEURS FICHIERS
+# =====================================================
+
+class MultipleFileInput(forms.ClearableFileInput):
+    allow_multiple_selected = True
+
+
+class MultipleFileField(forms.FileField):
+    widget = MultipleFileInput
+
+    def clean(self, data, initial=None):
+        if not data:
+            return []
+
+        fichiers = data if isinstance(data, (list, tuple)) else [data]
+
+        resultats = []
+
+        for fichier in fichiers:
+            fichier_nettoye = super().clean(fichier, initial)
+
+            if fichier_nettoye:
+                resultats.append(fichier_nettoye)
+
+        return resultats
+
+
+# =====================================================
+# VALIDATION COMMUNE DES FICHIERS
+# =====================================================
+
+def valider_fichier(fichier):
+    extension = Path(fichier.name).suffix.lower()
+
+    if extension not in EXTENSIONS_AUTORISEES:
+        raise forms.ValidationError(
+            f"Le format du fichier {fichier.name} n'est pas autorisé."
+        )
+
+    if fichier.size > TAILLE_MAX_FICHIER:
+        raise forms.ValidationError(
+            f"Le fichier {fichier.name} dépasse la limite de 20 Mo."
+        )
+
+    return fichier
+
+
+# =====================================================
+# FORMULAIRE COURRIER
+# =====================================================
+
+class CourrierForm(forms.ModelForm):
+
+    documents = MultipleFileField(
+        required=False,
+        label="Pièces jointes",
+        help_text=(
+            "Formats acceptés : PDF, DOC, DOCX, XLS, XLSX, JPG, JPEG et PNG. "
+            "20 Mo maximum par fichier."
+        ),
+    )
+
+    class Meta:
+        model = Courrier
+
+        fields = [
+            "sens",
+            "date_courrier",
+            "date_reception_expedition",
+            "mode_reception",
+            "date_reception_physique",
+            "nom_livreur",
+            "date_expedition",
+            "expediteur",
+            "destinataire",
+            "objet",
+            "description",
+            "categorie",
+            "service",
+            "responsable",
+            "priorite",
+            "confidentialite",
+            "date_limite",
+            "document",
+        ]
+
+        labels = {
+            "sens": "Type de courrier",
+            "date_courrier": "Date du courrier",
+            "date_reception_expedition": "Date de réception / expédition",
+            "mode_reception": "Mode de réception",
+            "date_reception_physique": "Date et heure de réception physique",
+            "nom_livreur": "Nom du livreur ou déposant",
+            "date_expedition": "Date d'expédition",
+            "expediteur": "Expéditeur",
+            "destinataire": "Destinataire",
+            "objet": "Objet du courrier",
+            "description": "Description / Observations",
+            "categorie": "Catégorie",
+            "service": "Service concerné",
+            "responsable": "Responsable du traitement",
+            "priorite": "Niveau de priorité",
+            "confidentialite": "Niveau de confidentialité",
+            "date_limite": "Date limite de traitement",
+            "document": "Ancienne pièce jointe",
+        }
+
+        widgets = {
+            "sens": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "date_courrier": forms.DateInput(attrs={
+                "type": "date",
+                "class": "form-control",
+            }),
+
+            "date_reception_expedition": forms.DateInput(attrs={
+                "type": "date",
+                "class": "form-control",
+            }),
+
+            "mode_reception": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "date_reception_physique": forms.DateTimeInput(attrs={
+                "type": "datetime-local",
+                "class": "form-control",
+            }),
+
+            "nom_livreur": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "Nom du livreur ou déposant",
+            }),
+
+            "date_expedition": forms.DateInput(attrs={
+                "type": "date",
+                "class": "form-control",
+            }),
+
+            "expediteur": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "Nom de l'expéditeur",
+            }),
+
+            "destinataire": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "Nom du destinataire",
+            }),
+
+            "objet": forms.TextInput(attrs={
+                "class": "form-control",
+                "placeholder": "Objet du courrier",
+            }),
+
+            "description": forms.Textarea(attrs={
+                "rows": 4,
+                "class": "form-control",
+                "placeholder": "Informations complémentaires...",
+            }),
+
+            "categorie": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "service": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "responsable": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "priorite": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "confidentialite": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "date_limite": forms.DateInput(attrs={
+                "type": "date",
+                "class": "form-control",
+            }),
+
+            "document": forms.ClearableFileInput(attrs={
+                "class": "form-control",
+            }),
+        }
+
+    # -------------------------------------------------
+    # INITIALISATION
+    # -------------------------------------------------
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        champs_obligatoires = [
+            "sens",
+            "date_courrier",
+            "date_reception_expedition",
+            "expediteur",
+            "destinataire",
+            "objet",
+        ]
+
+        for nom in champs_obligatoires:
+            self.fields[nom].required = True
+
+        champs_facultatifs = [
+            "mode_reception",
+            "date_reception_physique",
+            "nom_livreur",
+            "date_expedition",
+            "description",
+            "categorie",
+            "service",
+            "responsable",
+            "date_limite",
+            "document",
+            "documents",
+        ]
+
+        for nom in champs_facultatifs:
+            self.fields[nom].required = False
+
+        # Catégories actives
+        categories = CategorieCourrier.objects.filter(
+            actif=True
+        ).order_by("nom")
+
+        if self.instance.pk and self.instance.categorie_id:
+            categories = (
+                CategorieCourrier.objects.filter(
+                    pk=self.instance.categorie_id
+                ) | categories
+            )
+
+        self.fields["categorie"].queryset = categories.distinct()
+
+        # Services actifs
+        services = Service.objects.filter(
+            actif=True
+        ).order_by("nom")
+
+        if self.instance.pk and self.instance.service_id:
+            services = (
+                Service.objects.filter(
+                    pk=self.instance.service_id
+                ) | services
+            )
+
+        self.fields["service"].queryset = services.distinct()
+
+        # Responsables actifs
+        utilisateurs = User.objects.filter(
+            is_active=True
+        ).order_by(
+            "last_name",
+            "first_name",
+            "username"
+        )
+
+        if self.instance.pk and self.instance.responsable_id:
+            utilisateurs = (
+                User.objects.filter(
+                    pk=self.instance.responsable_id
+                ) | utilisateurs
+            )
+
+        self.fields["responsable"].queryset = utilisateurs.distinct()
+
+        self.fields["document"].help_text = (
+            "Champ historique conservé pour les anciens documents."
+        )
+
+    # -------------------------------------------------
+    # VALIDATION DE L'ANCIEN DOCUMENT
+    # -------------------------------------------------
+
+    def clean_document(self):
+        document = self.cleaned_data.get("document")
+
+        if document:
+            valider_fichier(document)
+
+        return document
+
+    # -------------------------------------------------
+    # VALIDATION DES DOCUMENTS MULTIPLES
+    # -------------------------------------------------
+
+    def clean_documents(self):
+        fichiers = self.cleaned_data.get("documents", [])
+
+        for fichier in fichiers:
+            valider_fichier(fichier)
+
+        return fichiers
+
+    # -------------------------------------------------
+    # VALIDATION GÉNÉRALE
+    # -------------------------------------------------
+
+    def clean(self):
+        cleaned_data = super().clean()
+
+        sens = cleaned_data.get("sens")
+        mode_reception = cleaned_data.get("mode_reception")
+        date_expedition = cleaned_data.get("date_expedition")
+        date_reception_physique = cleaned_data.get(
+            "date_reception_physique"
+        )
+        nom_livreur = cleaned_data.get("nom_livreur")
+
+        if sens == Courrier.Sens.ENTRANT:
+
+            if date_expedition:
+                self.add_error(
+                    "date_expedition",
+                    "La date d'expédition est réservée aux courriers sortants."
+                )
+
+            if (
+                mode_reception == Courrier.ModeReception.PHYSIQUE
+                and not date_reception_physique
+            ):
+                self.add_error(
+                    "date_reception_physique",
+                    "La date et l'heure de réception physique sont obligatoires."
+                )
+
+        elif sens == Courrier.Sens.SORTANT:
+
+            if not date_expedition:
+                self.add_error(
+                    "date_expedition",
+                    "La date d'expédition est obligatoire pour un courrier sortant."
+                )
+
+            if mode_reception:
+                self.add_error(
+                    "mode_reception",
+                    "Le mode de réception concerne les courriers entrants."
+                )
+
+            if date_reception_physique:
+                self.add_error(
+                    "date_reception_physique",
+                    "La réception physique concerne les courriers entrants."
+                )
+
+            if nom_livreur:
+                self.add_error(
+                    "nom_livreur",
+                    "Le nom du livreur concerne les courriers entrants."
+                )
+
+        return cleaned_data
+
+
+# =====================================================
+# FORMULAIRE DE TRANSMISSION ET D'AFFECTATION
+# =====================================================
+
+class AffectationForm(forms.ModelForm):
+
+    class Meta:
+        model = Affectation
+
+        fields = [
+            "service",
+            "agent",
+            "instruction",
+            "date_limite",
+        ]
+
+        labels = {
+            "service": "Service destinataire",
+            "agent": "Agent responsable",
+            "instruction": "Instruction de traitement",
+            "date_limite": "Date limite de traitement",
+        }
+
+        widgets = {
+            "service": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "agent": forms.Select(attrs={
+                "class": "form-select",
+            }),
+
+            "instruction": forms.Textarea(attrs={
+                "rows": 3,
+                "class": "form-control",
+                "placeholder": "Instructions de traitement...",
+            }),
+
+            "date_limite": forms.DateInput(attrs={
+                "type": "date",
+                "class": "form-control",
+            }),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.fields["instruction"].required = False
+        self.fields["date_limite"].required = False
+        self.fields["agent"].required = False
+
+        # Services actifs uniquement
+        self.fields["service"].queryset = (
+            Service.objects.filter(
+                actif=True
+            ).order_by("nom")
+        )
+
+        # Agents actifs du groupe Agent
+        agents = User.objects.filter(
+            is_active=True,
+            groups__name__iexact="agent"
+        ).order_by(
+            "last_name",
+            "first_name",
+            "username"
+        ).distinct()
+
+        # Conserver l'agent déjà affecté lors d'une modification
+        if self.instance.pk and self.instance.agent_id:
+            agents = (
+                User.objects.filter(
+                    pk=self.instance.agent_id
+                ) | agents
+            )
+
+        self.fields["agent"].queryset = agents.distinct()
+
+    def clean(self):
+        cleaned_data = super().clean()
+
+        service = cleaned_data.get("service")
+        agent = cleaned_data.get("agent")
+        date_limite = cleaned_data.get("date_limite")
+
+        if service and not service.actif:
+            self.add_error(
+                "service",
+                "Le service sélectionné n'est pas actif."
+            )
+
+        if agent and not agent.is_active:
+            self.add_error(
+                "agent",
+                "L'agent sélectionné n'est pas actif."
+            )
+
+        if date_limite and date_limite < timezone.localdate():
+            self.add_error(
+                "date_limite",
+                "La date limite ne peut pas être dans le passé."
+            )
+
+        return cleaned_data
+\n\n\n==========================================================================================\nFICHIER : courrier/permissions.py\n==========================================================================================\n
+import unicodedata
+
+from django.utils import timezone
+
+from .models import Courrier, Service, DelegationTransmission
+
+
+# =====================================================
+# NORMALISATION DES GROUPES
+# =====================================================
+
+def normaliser_nom(valeur):
+
+    valeur = unicodedata.normalize("NFD", valeur or "")
+
+    valeur = "".join(
+        caractere
+        for caractere in valeur
+        if unicodedata.category(caractere) != "Mn"
+    )
+
+    return valeur.strip().casefold()
+
+
+# =====================================================
+# IDENTIFICATION DU PROFIL
+# =====================================================
+
+def obtenir_profil(user):
+
+    if not user.is_authenticated or not user.is_active:
+        return None
+
+    if user.is_superuser:
+        return "ADMIN"
+
+    groupes = {
+        normaliser_nom(nom)
+        for nom in user.groups.values_list(
+            "name",
+            flat=True
+        )
+    }
+
+    correspondances = [
+        ("accueil", "ACCUEIL"),
+        ("secretariat", "SECRETARIAT"),
+        ("direction", "DIRECTION"),
+        ("responsable de service", "RESPONSABLE"),
+        ("agent", "AGENT"),
+    ]
+
+    for nom, profil in correspondances:
+
+        if nom in groupes:
+            return profil
+
+    return None
+
+
+# =====================================================
+# ADMINISTRATEUR
+# =====================================================
+
+def est_administrateur(user):
+
+    return obtenir_profil(user) == "ADMIN"
+
+
+# =====================================================
+# PERMISSIONS GENERALES
+# =====================================================
+
+def utilisateur_peut_consulter(user):
+
+    profil = obtenir_profil(user)
+
+    return (
+        profil == "ADMIN"
+        or (
+            profil is not None
+            and user.has_perm("courrier.view_courrier")
+        )
+    )
+
+
+def utilisateur_peut_enregistrer(user):
+
+    profil = obtenir_profil(user)
+
+    return (
+        profil == "ADMIN"
+        or (
+            profil in ["ACCUEIL", "SECRETARIAT"]
+            and user.has_perm("courrier.add_courrier")
+        )
+    )
+
+
+def utilisateur_peut_modifier(user):
+
+    profil = obtenir_profil(user)
+
+    return (
+        profil == "ADMIN"
+        or (
+            profil in ["SECRETARIAT", "RESPONSABLE"]
+            and user.has_perm("courrier.change_courrier")
+        )
+    )
+
+
+# =====================================================
+# SERVICES
+# =====================================================
+
+def services_du_responsable(user):
+
+    return Service.objects.filter(
+        responsable=user,
+        actif=True
+    )
+
+
+def utilisateur_est_responsable_du_service(user, service):
+
+    return bool(
+        user.is_authenticated
+        and user.is_active
+        and service is not None
+        and service.responsable_id == user.pk
+    )
+
+
+def utilisateur_est_responsable_du_courrier(user, courrier):
+
+    if courrier is None or not courrier.service_id:
+        return False
+
+    return utilisateur_est_responsable_du_service(
+        user,
+        courrier.service
+    )
+
+
+# =====================================================
+# CONFIDENTIALITE
+# =====================================================
+
+def courrier_est_confidentiel(courrier):
+
+    return (
+        courrier.confidentialite in [
+            Courrier.Confidentialite.CONFIDENTIELLE,
+            Courrier.Confidentialite.STRICTE,
+        ]
+        or courrier.priorite == Courrier.Priorite.CONFIDENTIELLE
+    )
+
+
+def courrier_est_deja_transmis(courrier):
+
+    return (
+        courrier.statut != Courrier.Statut.ENREGISTRE
+        or courrier.affectations.filter(
+            active=True
+        ).exists()
+    )
+
+
+# =====================================================
+# DELEGATION TEMPORAIRE
+# =====================================================
+
+def utilisateur_a_delegation_valide(user):
+
+    if not user.is_authenticated or not user.is_active:
+        return False
+
+    maintenant = timezone.now()
+
+    return DelegationTransmission.objects.filter(
+        utilisateur=user,
+        actif=True,
+        date_debut__lte=maintenant,
+        date_fin__gte=maintenant,
+        autorise_par__is_active=True,
+    ).exists()
+
+
+# =====================================================
+# CONSULTATION D'UN COURRIER
+# =====================================================
+
+def utilisateur_peut_consulter_courrier(user, courrier):
+
+    profil = obtenir_profil(user)
+
+    if profil is None or courrier is None:
+        return False
+
+    if not utilisateur_peut_consulter(user):
+        return False
+
+    # Administrateur et Direction : consultation globale.
+    if profil in ["ADMIN", "DIRECTION"]:
+        return True
+
+    # Accueil et Secrétariat.
+    if profil in ["ACCUEIL", "SECRETARIAT"]:
+
+        if courrier_est_confidentiel(courrier):
+
+            return not courrier_est_deja_transmis(
+                courrier
+            )
+
+        return True
+
+    # Responsable : uniquement son service.
+    if profil == "RESPONSABLE":
+
+        return utilisateur_est_responsable_du_courrier(
+            user,
+            courrier
+        )
+
+    # Agent : uniquement ses affectations actives,
+    # jamais les courriers confidentiels.
+    if profil == "AGENT":
+
+        if courrier_est_confidentiel(courrier):
+            return False
+
+        return courrier.affectations.filter(
+            agent=user,
+            active=True
+        ).exists()
+
+    return False
+
+
+# =====================================================
+# MODIFICATION D'UN COURRIER
+# =====================================================
+
+def utilisateur_peut_modifier_courrier(user, courrier):
+
+    profil = obtenir_profil(user)
+
+    if profil is None or courrier is None:
+        return False
+
+    # Accueil, Direction et agents ne modifient pas.
+    if profil in ["ACCUEIL", "DIRECTION", "AGENT"]:
+        return False
+
+    # Administrateur : modification selon permission Django.
+    if profil == "ADMIN":
+
+        return user.has_perm(
+            "courrier.change_courrier"
+        )
+
+    if not utilisateur_peut_consulter_courrier(
+        user,
+        courrier
+    ):
+        return False
+
+    # Secrétariat : uniquement avant transmission.
+    if profil == "SECRETARIAT":
+
+        return (
+            user.has_perm("courrier.change_courrier")
+            and not courrier_est_deja_transmis(courrier)
+        )
+
+    # Responsable : fiche de son service uniquement.
+    # Le changement de service est interdit dans la vue.
+    if profil == "RESPONSABLE":
+
+        return (
+            utilisateur_est_responsable_du_courrier(
+                user,
+                courrier
+            )
+            and user.has_perm("courrier.change_courrier")
+            and courrier.statut != Courrier.Statut.CLOTURE
+        )
+
+    return False
+
+
+# =====================================================
+# TRANSMISSION INITIALE
+# =====================================================
+
+def utilisateur_peut_transmettre(user, courrier=None):
+
+    profil = obtenir_profil(user)
+
+    if profil is None:
+        return False
+
+    if profil == "ADMIN":
+        return True
+
+    if profil not in ["ACCUEIL", "SECRETARIAT"]:
+        return False
+
+    if not user.has_perm(
+        "courrier.transmettre_courrier"
+    ):
+        return False
+
+    if courrier is not None:
+
+        if courrier.sens != Courrier.Sens.ENTRANT:
+            return False
+
+        if courrier.statut != Courrier.Statut.ENREGISTRE:
+            return False
+
+        if courrier_est_deja_transmis(courrier):
+            return False
+
+    # Accueil : transmission normale.
+    if profil == "ACCUEIL":
+        return True
+
+    # Secrétariat : remplacement temporaire autorisé.
+    return utilisateur_a_delegation_valide(user)
+
+
+# =====================================================
+# AFFECTATION A UN AGENT
+# =====================================================
+
+def utilisateur_peut_affecter_agent(user, courrier):
+
+    profil = obtenir_profil(user)
+
+    if profil == "ADMIN":
+        return True
+
+    if profil != "RESPONSABLE" or courrier is None:
+        return False
+
+    return (
+        utilisateur_est_responsable_du_courrier(
+            user,
+            courrier
+        )
+        and user.has_perm("courrier.change_courrier")
+        and courrier.sens == Courrier.Sens.ENTRANT
+        and courrier.statut in [
+            Courrier.Statut.TRANSMIS,
+            Courrier.Statut.EN_COURS,
+            Courrier.Statut.EN_ATTENTE,
+        ]
+    )
+
+
+# =====================================================
+# TRAITEMENT
+# =====================================================
+
+def utilisateur_peut_traiter_courrier(user, courrier):
+
+    profil = obtenir_profil(user)
+
+    if profil not in ["AGENT", "RESPONSABLE"]:
+        return False
+
+    if courrier is None:
+        return False
+
+    if courrier.sens != Courrier.Sens.ENTRANT:
+        return False
+
+    if courrier.statut not in [
+        Courrier.Statut.TRANSMIS,
+        Courrier.Statut.EN_COURS,
+        Courrier.Statut.EN_ATTENTE,
+    ]:
+        return False
+
+    if not utilisateur_peut_consulter_courrier(
+        user,
+        courrier
+    ):
+        return False
+
+    if not user.has_perm(
+        "courrier.traiter_courrier"
+    ):
+        return False
+
+    if profil == "AGENT":
+
+        return courrier.affectations.filter(
+            agent=user,
+            active=True
+        ).exists()
+
+    return utilisateur_est_responsable_du_courrier(
+        user,
+        courrier
+    )
+
+
+# =====================================================
+# CLOTURE
+# =====================================================
+
+def utilisateur_peut_cloturer(user):
+
+    return (
+        obtenir_profil(user) == "RESPONSABLE"
+        and user.has_perm("courrier.cloturer_courrier")
+    )
+
+
+def utilisateur_peut_cloturer_courrier(user, courrier):
+
+    if obtenir_profil(user) != "RESPONSABLE":
+        return False
+
+    if courrier is None:
+        return False
+
+    return (
+        courrier.sens == Courrier.Sens.ENTRANT
+        and courrier.statut == Courrier.Statut.TRAITE
+        and utilisateur_est_responsable_du_courrier(
+            user,
+            courrier
+        )
+        and user.has_perm("courrier.cloturer_courrier")
+    )
+
+
+# =====================================================
+# RETOUR AU SECRETARIAT
+# =====================================================
+
+def utilisateur_peut_retourner_courrier(user, courrier):
+
+    if obtenir_profil(user) != "RESPONSABLE":
+        return False
+
+    if courrier is None:
+        return False
+
+    return (
+        courrier.sens == Courrier.Sens.ENTRANT
+        and courrier.statut != Courrier.Statut.CLOTURE
+        and utilisateur_est_responsable_du_courrier(
+            user,
+            courrier
+        )
+        and user.has_perm("courrier.retourner_courrier")
+    )
+
+
+# =====================================================
+# REOUVERTURE
+# =====================================================
+
+def utilisateur_peut_reouvrir_courrier(user, courrier):
+
+    profil = obtenir_profil(user)
+
+    if profil is None or courrier is None:
+        return False
+
+    if courrier.statut != Courrier.Statut.CLOTURE:
+        return False
+
+    if profil == "ADMIN":
+
+        return user.has_perm(
+            "courrier.reouvrir_courrier"
+        )
+
+    if profil == "RESPONSABLE":
+
+        return (
+            courrier.sens == Courrier.Sens.ENTRANT
+            and utilisateur_est_responsable_du_courrier(
+                user,
+                courrier
+            )
+            and user.has_perm("courrier.reouvrir_courrier")
+        )
+
+    return False
+
+
+# =====================================================
+# IDENTIFICATION DES PROFILS
+# =====================================================
+
+def utilisateur_est_direction(user):
+
+    return obtenir_profil(user) == "DIRECTION"
+
+
+def utilisateur_est_responsable(user):
+
+    return obtenir_profil(user) == "RESPONSABLE"
+
+
+def utilisateur_est_agent(user):
+
+    return obtenir_profil(user) == "AGENT"
+
+
+def utilisateur_est_secretariat(user):
+
+    return obtenir_profil(user) == "SECRETARIAT"
+
+
+def utilisateur_est_accueil(user):
+
+    return obtenir_profil(user) == "ACCUEIL"
+\n\n\n==========================================================================================\nFICHIER : courrier/views.py\n==========================================================================================\n
+from pathlib import Path
+
+from django import forms
+from django.core.paginator import Paginator
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.db.models import Q
+from django.shortcuts import render, redirect, get_object_or_404
+from django.utils import timezone
+
+from .models import (
+    Courrier,
+    Affectation,
+    Historique,
+    Service,
+    PieceJointe,
+    RetourCourrier,
+)
+
+from .forms import CourrierForm, AffectationForm
+
+from .permissions import (
+    obtenir_profil,
+    utilisateur_peut_consulter,
+    utilisateur_peut_enregistrer,
+    utilisateur_peut_modifier_courrier,
+    utilisateur_peut_transmettre,
+    utilisateur_peut_affecter_agent,
+    utilisateur_peut_traiter_courrier,
+    utilisateur_peut_cloturer_courrier,
+    utilisateur_peut_retourner_courrier,
+    utilisateur_peut_reouvrir_courrier,
+)
+
+
+# =====================================================
+# FORMULAIRES DES ACTIONS
+# =====================================================
+
+class TraitementForm(forms.Form):
+    statut = forms.ChoiceField(
+        choices=[
+            ("EN_COURS", "En cours de traitement"),
+            ("EN_ATTENTE", "En attente"),
+            ("TRAITE", "Traité"),
+        ],
+        label="État du traitement"
+    )
+
+    observation = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 4}),
+        label="Observation"
+    )
+
+
+class RetourForm(forms.Form):
+    motif = forms.CharField(
+        required=True,
+        widget=forms.Textarea(attrs={"rows": 4}),
+        label="Motif du retour"
+    )
+
+
+class MotifForm(forms.Form):
+    motif = forms.CharField(
+        required=True,
+        widget=forms.Textarea(attrs={"rows": 4}),
+        label="Motif"
+    )
+
+
+class PieceJointeForm(forms.Form):
+    fichier = forms.FileField(label="Fichier à joindre")
+
+    def clean_fichier(self):
+        fichier = self.cleaned_data["fichier"]
+
+        extensions = [
+            ".pdf", ".doc", ".docx",
+            ".xls", ".xlsx",
+            ".jpg", ".jpeg", ".png"
+        ]
+
+        extension = Path(fichier.name).suffix.lower()
+
+        if extension not in extensions:
+            raise forms.ValidationError(
+                "Format non autorisé. Formats acceptés : PDF, DOC, DOCX, XLS, XLSX, JPG, JPEG et PNG."
+            )
+
+        if fichier.size > 20 * 1024 * 1024:
+            raise forms.ValidationError(
+                "Le fichier ne doit pas dépasser 20 Mo."
+            )
+
+        return fichier
+
+
+# =====================================================
+# SERVICES DU RESPONSABLE
+# =====================================================
+
+def services_du_responsable(user):
+    return Service.objects.filter(
+        responsable=user,
+        actif=True
+    )
+
+
+def identifiants_services_responsable(user):
+    return services_du_responsable(user).values_list(
+        "id",
+        flat=True
+    )
+
+
+# =====================================================
+# CONTRÔLE DES DROITS
+# =====================================================
+
+def verifier_droit_consultation(user):
+    if not utilisateur_peut_consulter(user):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de consultation."
+        )
+
+    return obtenir_profil(user)
+
+
+def verifier_droit_modification(user):
+    profil = obtenir_profil(user)
+
+    if profil == "ADMIN":
+        return profil
+
+    if not utilisateur_peut_modifier_courrier(user, None):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de modification."
+        )
+
+    return profil
+
+
+# =====================================================
+# COURRIERS ACCESSIBLES
+# =====================================================
+
+def courriers_accessibles(user):
+    profil = verifier_droit_consultation(user)
+
+    qs = Courrier.objects.select_related(
+        "service",
+        "responsable",
+        "cree_par"
+    ).distinct()
+
+    if profil in ["ADMIN", "DIRECTION"]:
+        return qs
+
+    confidentialite_normale = (
+        Q(confidentialite=Courrier.Confidentialite.NORMALE)
+        & ~Q(priorite=Courrier.Priorite.CONFIDENTIELLE)
+    )
+
+    confidentialite_restraint = (
+        Q(confidentialite__in=[
+            Courrier.Confidentialite.CONFIDENTIELLE,
+            Courrier.Confidentialite.STRICTE,
+        ])
+        | Q(priorite=Courrier.Priorite.CONFIDENTIELLE)
+    )
+
+    if profil in ["ACCUEIL", "SECRETARIAT"]:
+        courriers_normaux = qs.filter(
+            confidentialite_normale
+        )
+
+        courriers_confidentiels_non_transmis = qs.filter(
+            confidentialite_restraint,
+            statut="ENREGISTRE"
+        ).exclude(
+            affectations__active=True
+        )
+
+        return (
+            courriers_normaux
+            | courriers_confidentiels_non_transmis
+        ).distinct()
+
+    if profil == "RESPONSABLE":
+        return qs.filter(
+            service__responsable=user
+        ).distinct()
+
+    if profil == "AGENT":
+        return qs.filter(
+            affectations__agent=user,
+            affectations__active=True
+        ).filter(
+            confidentialite_normale
+        ).distinct()
+
+    return qs.none()
+
+
+def obtenir_courrier_accessible(user, pk):
+    return get_object_or_404(
+        courriers_accessibles(user),
+        pk=pk
+    )
+
+
+# =====================================================
+# HISTORIQUE
+# =====================================================
+
+def enregistrer_historique(
+    courrier,
+    utilisateur,
+    action,
+    details="",
+    motif="",
+    avant="",
+    apres=""
+):
+    Historique.objects.create(
+        courrier=courrier,
+        utilisateur=utilisateur,
+        action=action,
+        details=details,
+        motif=motif,
+        avant=avant,
+        apres=apres
+    )
+
+
+# =====================================================
+# TABLEAU DE BORD
+# =====================================================
+
+@login_required
+def dashboard(request):
+    profil = obtenir_profil(request.user)
+    qs = courriers_accessibles(request.user)
+    aujourd_hui = timezone.localdate()
+
+    context = {
+        "profil": profil,
+        "total": qs.count(),
+        "entrants": qs.filter(sens="ENTRANT").count(),
+        "sortants": qs.filter(sens="SORTANT").count(),
+        "en_cours": qs.filter(
+            statut__in=["TRANSMIS", "EN_COURS", "EN_ATTENTE"]
+        ).count(),
+        "traites": qs.filter(
+            statut__in=["TRAITE", "CLOTURE"]
+        ).count(),
+        "en_retard": qs.filter(
+            date_limite__lt=aujourd_hui
+        ).exclude(
+            statut__in=["TRAITE", "CLOTURE"]
+        ).count(),
+        "recents": qs.order_by("-cree_le")[:8],
+        "a_transmettre": 0,
+        "a_traiter": 0,
+        "a_cloturer": 0,
+        "retours_en_attente": 0,
+        "mes_affectations": 0,
+        "mes_services": 0,
+    }
+
+    if profil in ["ACCUEIL", "SECRETARIAT", "ADMIN"]:
+        context["a_transmettre"] = qs.filter(
+            sens="ENTRANT",
+            statut="ENREGISTRE"
+        ).count()
+
+        context["retours_en_attente"] = RetourCourrier.objects.filter(
+            traite=False,
+            courrier__in=qs
+        ).count()
+
+    if profil == "RESPONSABLE":
+        services = services_du_responsable(request.user)
+        services_ids = services.values_list("id", flat=True)
+
+        courriers_service = qs.filter(
+            service_id__in=services_ids,
+            sens="ENTRANT"
+        )
+
+        context["mes_services"] = services.count()
+
+        context["a_traiter"] = courriers_service.filter(
+            statut__in=["TRANSMIS", "EN_COURS", "EN_ATTENTE"]
+        ).count()
+
+        context["a_cloturer"] = courriers_service.filter(
+            statut="TRAITE"
+        ).count()
+
+        context["retours_en_attente"] = RetourCourrier.objects.filter(
+            traite=False,
+            courrier__in=courriers_service
+        ).count()
+
+    if profil == "AGENT":
+        affectations = Affectation.objects.filter(
+            agent=request.user,
+            active=True,
+            courrier__in=qs
+        )
+
+        context["mes_affectations"] = affectations.count()
+
+        context["a_traiter"] = affectations.filter(
+            statut__in=["TRANSMIS", "EN_COURS", "EN_ATTENTE"]
+        ).count()
+
+        context["a_cloturer"] = affectations.filter(
+            statut="TRAITE"
+        ).count()
+
+    return render(
+        request,
+        "courrier/dashboard.html",
+        context
+    )
+
+
+# =====================================================
+# LISTE DES COURRIERS
+# =====================================================
+
+@login_required
+def liste_courriers(request):
+    qs = courriers_accessibles(request.user)
+
+    q = request.GET.get("q", "").strip()
+    sens = request.GET.get("sens", "")
+    statut = request.GET.get("statut", "")
+    categorie = request.GET.get("categorie", "")
+
+    if categorie == "entrants":
+        qs = qs.filter(sens="ENTRANT")
+        filtre_titre = "Courriers entrants"
+
+    elif categorie == "sortants":
+        qs = qs.filter(sens="SORTANT")
+        filtre_titre = "Courriers sortants"
+
+    elif categorie == "en_cours":
+        qs = qs.filter(
+            statut__in=["TRANSMIS", "EN_COURS", "EN_ATTENTE"]
+        )
+        filtre_titre = "Courriers en cours de traitement"
+
+    elif categorie == "traites":
+        qs = qs.filter(
+            statut__in=["TRAITE", "CLOTURE"]
+        )
+        filtre_titre = "Courriers traités / clôturés"
+
+    elif categorie == "en_retard":
+        qs = qs.filter(
+            date_limite__lt=timezone.localdate()
+        ).exclude(
+            statut__in=["TRAITE", "CLOTURE"]
+        )
+        filtre_titre = "Courriers en retard"
+
+    else:
+        filtre_titre = "Tous les courriers"
+
+    if q:
+        qs = qs.filter(
+            Q(reference__icontains=q)
+            | Q(objet__icontains=q)
+            | Q(expediteur__icontains=q)
+            | Q(destinataire__icontains=q)
+        )
+
+    if sens in ["ENTRANT", "SORTANT"]:
+        qs = qs.filter(sens=sens)
+
+    if statut:
+        qs = qs.filter(statut=statut)
+
+    nombre_par_page = request.GET.get("par_page", "10")
+
+    if nombre_par_page not in ["10", "25", "50", "100"]:
+        nombre_par_page = "10"
+
+    paginator = Paginator(
+        qs.order_by("-cree_le"),
+        int(nombre_par_page)
+    )
+
+    page_obj = paginator.get_page(
+        request.GET.get("page")
+    )
+
+    context = {
+        "courriers": page_obj,
+        "page_obj": page_obj,
+        "paginator": paginator,
+        "nombre_par_page": nombre_par_page,
+        "q": q,
+        "sens": sens,
+        "statut": statut,
+        "categorie": categorie,
+        "filtre_titre": filtre_titre,
+    }
+
+    return render(
+        request,
+        "courrier/liste.html",
+        context
+    )
+
+
+# =====================================================
+# NOUVEAU COURRIER
+# =====================================================
+
+@login_required
+def nouveau_courrier(request):
+    if not utilisateur_peut_enregistrer(request.user):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit d'enregistrement."
+        )
+
+    if request.method == "POST":
+        form = CourrierForm(request.POST, request.FILES)
+
+        if form.is_valid():
+            obj = form.save(commit=False)
+            obj.cree_par = request.user
+
+            if obj.sens == "ENTRANT":
+                obj.service = None
+                obj.responsable = None
+                obj.date_expedition = None
+                obj.statut = "ENREGISTRE"
+                obj.date_cloture = None
+
+            elif obj.sens == "SORTANT":
+                if not obj.date_expedition:
+                    form.add_error(
+                        "date_expedition",
+                        "La date d'expédition est obligatoire pour un courrier sortant."
+                    )
+                else:
+                    obj.statut = "CLOTURE"
+                    obj.date_cloture = obj.date_expedition
+                    obj.service = None
+                    obj.responsable = None
+
+            if not form.errors:
+                with transaction.atomic():
+                    obj.save()
+                    form.save_m2m()
+
+                    documents = form.cleaned_data.get("documents", [])
+
+                    for fichier in documents:
+                        PieceJointe.objects.create(
+                            courrier=obj,
+                            fichier=fichier,
+                            nom_original=fichier.name,
+                            type_mime=getattr(fichier, "content_type", "") or "",
+                            taille=fichier.size,
+                            ajoute_par=request.user
+                        )
+
+                    enregistrer_historique(
+                        obj,
+                        request.user,
+                        "ENREGISTREMENT",
+                        details="Création du courrier.",
+                        apres=(
+                            f"Référence : {obj.reference}\n"
+                            f"Sens : {obj.get_sens_display()}\n"
+                            f"Objet : {obj.objet}"
+                        )
+                    )
+
+                messages.success(
+                    request,
+                    f"Le courrier {obj.reference} a été enregistré avec succès."
+                )
+
+                return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = CourrierForm()
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "titre": "Nouveau courrier",
+            "libelle_bouton": "Enregistrer le courrier"
+        }
+    )
+
+
+# =====================================================
+# DÉTAIL D'UN COURRIER
+# =====================================================
+
+@login_required
+def detail_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+    profil = obtenir_profil(request.user)
+
+    affectation_active = Affectation.objects.filter(
+        courrier=obj,
+        active=True
+    ).select_related("service", "agent").order_by(
+        "-date_transmission"
+    ).first()
+
+    peut_modifier = (
+        profil == "ADMIN"
+        or utilisateur_peut_modifier_courrier(request.user, obj)
+    )
+
+    peut_confirmer_reception = (
+        profil == "RESPONSABLE"
+        and obj.sens == "ENTRANT"
+        and obj.service_id is not None
+        and obj.service.responsable_id == request.user.pk
+        and affectation_active is not None
+        and affectation_active.date_confirmation_reception is None
+    )
+
+    context = {
+        "courrier": obj,
+        "profil": profil,
+        "affectation_active": affectation_active,
+
+        "affectations": Affectation.objects.filter(
+            courrier=obj
+        ).select_related(
+            "service",
+            "agent",
+            "transmis_par",
+            "confirme_par"
+        ).order_by("-date_transmission"),
+
+        "pieces_jointes": PieceJointe.objects.filter(
+            courrier=obj,
+            active=True
+        ).select_related("ajoute_par"),
+
+        "historique": Historique.objects.filter(
+            courrier=obj
+        ).select_related("utilisateur").order_by("-date_action"),
+
+        "peut_modifier": peut_modifier,
+
+        "peut_transmettre": utilisateur_peut_transmettre(
+            request.user, obj
+        ),
+
+        "peut_affecter_agent": utilisateur_peut_affecter_agent(
+            request.user, obj
+        ),
+
+        "peut_traiter": utilisateur_peut_traiter_courrier(
+            request.user, obj
+        ),
+
+        "peut_cloturer": utilisateur_peut_cloturer_courrier(
+            request.user, obj
+        ),
+
+        "peut_retourner": utilisateur_peut_retourner_courrier(
+            request.user, obj
+        ),
+
+        "peut_reouvrir": utilisateur_peut_reouvrir_courrier(
+            request.user, obj
+        ),
+
+        "peut_confirmer_reception": peut_confirmer_reception,
+
+        "peut_ajouter_piece_jointe": (
+            profil == "ADMIN"
+            or utilisateur_peut_modifier_courrier(request.user, obj)
+            or (
+                profil in ["RESPONSABLE", "AGENT"]
+                and utilisateur_peut_traiter_courrier(request.user, obj)
+            )
+        ),
+    }
+
+    return render(
+        request,
+        "courrier/detail.html",
+        context
+    )
+
+
+# =====================================================
+# MODIFICATION D'UN COURRIER
+# =====================================================
+
+@login_required
+def modifier_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+    profil = obtenir_profil(request.user)
+
+    if not (
+        profil == "ADMIN"
+        or utilisateur_peut_modifier_courrier(request.user, obj)
+    ):
+        raise PermissionDenied(
+            "Vous ne pouvez pas modifier ce courrier."
+        )
+
+    if request.method == "POST":
+        form = CourrierForm(
+            request.POST,
+            request.FILES,
+            instance=obj
+        )
+
+        if form.is_valid():
+            ancien_service = obj.service
+            ancienne_reference = obj.reference
+
+            with transaction.atomic():
+                modification = form.save(commit=False)
+
+                if profil != "ADMIN":
+                    modification.service = ancien_service
+                    modification.responsable = obj.responsable
+
+                modification.save()
+                form.save_m2m()
+
+                enregistrer_historique(
+                    obj,
+                    request.user,
+                    "MODIFICATION",
+                    details="Modification de la fiche courrier.",
+                    avant=f"Référence : {ancienne_reference}",
+                    apres=f"Objet : {obj.objet}"
+                )
+
+            messages.success(
+                request,
+                "Le courrier a été modifié."
+            )
+
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = CourrierForm(instance=obj)
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Modifier le courrier",
+            "libelle_bouton": "Enregistrer les modifications"
+        }
+    )
+
+
+# =====================================================
+# TRANSMISSION À UN SERVICE
+# =====================================================
+
+@login_required
+def transmettre_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_transmettre(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de transmettre ce courrier."
+        )
+
+    if obj.sens != "ENTRANT" or obj.statut != "ENREGISTRE":
+        raise PermissionDenied(
+            "Seul un courrier entrant enregistré et non transmis peut être transmis."
+        )
+
+    if request.method == "POST":
+        form = AffectationForm(request.POST)
+
+        if form.is_valid():
+            affectation = form.save(commit=False)
+
+            if not affectation.service.actif:
+                form.add_error(
+                    "service",
+                    "Ce service n'est plus actif."
+                )
+
+            if not affectation.service.responsable_id:
+                form.add_error(
+                    "service",
+                    "Ce service ne possède pas de responsable."
+                )
+
+            if not form.errors:
+                with transaction.atomic():
+                    Affectation.objects.filter(
+                        courrier=obj,
+                        active=True
+                    ).update(active=False)
+
+                    affectation.courrier = obj
+                    affectation.transmis_par = request.user
+                    affectation.agent = None
+                    affectation.active = True
+                    affectation.save()
+
+                    obj.service = affectation.service
+                    obj.responsable = affectation.service.responsable
+                    obj.statut = "TRANSMIS"
+
+                    obj.save(
+                        update_fields=[
+                            "service",
+                            "responsable",
+                            "statut",
+                            "modifie_le"
+                        ]
+                    )
+
+                    enregistrer_historique(
+                        obj,
+                        request.user,
+                        "TRANSMISSION",
+                        details=(
+                            f"Courrier transmis au service "
+                            f"{affectation.service.nom}."
+                        )
+                    )
+
+                messages.success(
+                    request,
+                    "Le courrier a été transmis au service sélectionné."
+                )
+
+                return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = AffectationForm()
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Transmettre le courrier",
+            "libelle_bouton": "Confirmer la transmission"
+        }
+    )
+
+
+# =====================================================
+# AFFECTATION À UN AGENT
+# =====================================================
+
+@login_required
+def affecter_agent(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_affecter_agent(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne pouvez pas affecter ce courrier à un agent."
+        )
+
+    if not obj.service_id:
+        raise PermissionDenied(
+            "Ce courrier n'est rattaché à aucun service."
+        )
+
+    if request.method == "POST":
+        form = AffectationForm(request.POST)
+
+        if form.is_valid():
+            nouvelle = form.save(commit=False)
+
+            if nouvelle.service_id != obj.service_id:
+                form.add_error(
+                    "service",
+                    "L'affectation doit rester dans le service destinataire."
+                )
+
+            if not nouvelle.agent:
+                form.add_error(
+                    "agent",
+                    "Veuillez sélectionner un agent."
+                )
+
+            if not form.errors:
+                with transaction.atomic():
+                    Affectation.objects.filter(
+                        courrier=obj,
+                        active=True
+                    ).update(active=False)
+
+                    nouvelle.courrier = obj
+                    nouvelle.transmis_par = request.user
+                    nouvelle.active = True
+                    nouvelle.save()
+
+                    enregistrer_historique(
+                        obj,
+                        request.user,
+                        "AFFECTATION_AGENT",
+                        details=(
+                            f"Courrier affecté à "
+                            f"{nouvelle.agent.get_full_name() or nouvelle.agent.username}."
+                        )
+                    )
+
+                messages.success(
+                    request,
+                    "Le courrier a été affecté à l'agent."
+                )
+
+                return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = AffectationForm(
+            initial={"service": obj.service_id}
+        )
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Affecter à un agent",
+            "libelle_bouton": "Confirmer l'affectation"
+        }
+    )
+
+
+# =====================================================
+# TRAITEMENT D'UN COURRIER
+# =====================================================
+
+@login_required
+def traiter_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_traiter_courrier(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne pouvez pas traiter ce courrier."
+        )
+
+    affectation = Affectation.objects.filter(
+        courrier=obj,
+        active=True
+    ).order_by("-date_transmission").first()
+
+    if request.method == "POST":
+        form = TraitementForm(request.POST)
+
+        if form.is_valid():
+            nouveau_statut = form.cleaned_data["statut"]
+            observation = form.cleaned_data["observation"]
+
+            with transaction.atomic():
+                if affectation:
+                    affectation.statut = nouveau_statut
+                    affectation.observation = observation
+                    affectation.save(
+                        update_fields=["statut", "observation"]
+                    )
+
+                obj.statut = nouveau_statut
+                obj.save(
+                    update_fields=["statut", "modifie_le"]
+                )
+
+                enregistrer_historique(
+                    obj,
+                    request.user,
+                    "TRAITEMENT",
+                    details=f"Statut : {nouveau_statut}",
+                    motif=observation
+                )
+
+            messages.success(
+                request,
+                "Le traitement du courrier a été enregistré."
+            )
+
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = TraitementForm(
+            initial={
+                "statut": obj.statut
+                if obj.statut in ["EN_COURS", "EN_ATTENTE", "TRAITE"]
+                else "EN_COURS"
+            }
+        )
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Traitement du courrier",
+            "libelle_bouton": "Enregistrer le traitement"
+        }
+    )
+
+
+# =====================================================
+# RETOUR AU SECRÉTARIAT
+# =====================================================
+
+@login_required
+def retourner_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_retourner_courrier(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne pouvez pas retourner ce courrier."
+        )
+
+    if request.method == "POST":
+        form = RetourForm(request.POST)
+
+        if form.is_valid():
+            motif = form.cleaned_data["motif"]
+
+            with transaction.atomic():
+                RetourCourrier.objects.create(
+                    courrier=obj,
+                    retourne_par=request.user,
+                    motif=motif
+                )
+
+                Affectation.objects.filter(
+                    courrier=obj,
+                    active=True
+                ).update(active=False)
+
+                # Le courrier reste rattaché à son service
+                # pour préserver la traçabilité.
+                enregistrer_historique(
+                    obj,
+                    request.user,
+                    "RETOUR_SECRETARIAT",
+                    details="Courrier retourné au Secrétariat.",
+                    motif=motif
+                )
+
+            messages.success(
+                request,
+                "Le retour du courrier au Secrétariat a été enregistré."
+            )
+
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = RetourForm()
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Retourner le courrier",
+            "libelle_bouton": "Confirmer le retour"
+        }
+    )
+
+
+# =====================================================
+# CLÔTURE D'UN COURRIER
+# =====================================================
+
+@login_required
+def cloturer_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_cloturer_courrier(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne disposez pas du droit de clôturer ce courrier."
+        )
+
+    if obj.sens != "ENTRANT":
+        raise PermissionDenied(
+            "La clôture manuelle concerne uniquement les courriers entrants."
+        )
+
+    if obj.statut != "TRAITE":
+        messages.warning(
+            request,
+            "Le courrier doit être marqué comme traité avant sa clôture."
+        )
+        return redirect("detail_courrier", pk=obj.pk)
+
+    if request.method == "POST":
+        with transaction.atomic():
+            obj.statut = "CLOTURE"
+            obj.date_cloture = timezone.localdate()
+
+            obj.save(
+                update_fields=[
+                    "statut",
+                    "date_cloture",
+                    "modifie_le"
+                ]
+            )
+
+            enregistrer_historique(
+                obj,
+                request.user,
+                "CLOTURE",
+                details="Clôture du courrier."
+            )
+
+        messages.success(
+            request,
+            f"Le courrier {obj.reference} a été clôturé."
+        )
+
+        return redirect("detail_courrier", pk=obj.pk)
+
+    return render(
+        request,
+        "courrier/confirmation_cloture.html",
+        {
+            "courrier": obj,
+            "titre": "Clôturer le courrier"
+        }
+    )
+
+
+# =====================================================
+# RÉOUVERTURE
+# =====================================================
+
+@login_required
+def reouvrir_courrier(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    if not utilisateur_peut_reouvrir_courrier(request.user, obj):
+        raise PermissionDenied(
+            "Vous ne pouvez pas rouvrir ce courrier."
+        )
+
+    if obj.statut != "CLOTURE":
+        messages.warning(
+            request,
+            "Ce courrier n'est pas clôturé."
+        )
+        return redirect("detail_courrier", pk=obj.pk)
+
+    if request.method == "POST":
+        form = MotifForm(request.POST)
+
+        if form.is_valid():
+            motif = form.cleaned_data["motif"]
+
+            with transaction.atomic():
+                obj.statut = (
+                    "TRANSMIS" if obj.service_id else "ENREGISTRE"
+                )
+                obj.date_cloture = None
+
+                obj.save(
+                    update_fields=[
+                        "statut",
+                        "date_cloture",
+                        "modifie_le"
+                    ]
+                )
+
+                enregistrer_historique(
+                    obj,
+                    request.user,
+                    "REOUVERTURE",
+                    details="Réouverture du courrier.",
+                    motif=motif
+                )
+
+            messages.success(
+                request,
+                "Le courrier a été rouvert."
+            )
+
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = MotifForm()
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Réouvrir le courrier",
+            "libelle_bouton": "Confirmer la réouverture"
+        }
+    )
+
+
+# =====================================================
+# AJOUT D'UNE PIÈCE JOINTE
+# =====================================================
+
+@login_required
+def ajouter_piece_jointe(request, pk):
+    obj = obtenir_courrier_accessible(request.user, pk)
+    profil = obtenir_profil(request.user)
+
+    autorise = (
+        profil == "ADMIN"
+        or utilisateur_peut_modifier_courrier(request.user, obj)
+        or (
+            profil in ["RESPONSABLE", "AGENT"]
+            and utilisateur_peut_traiter_courrier(request.user, obj)
+        )
+    )
+
+    if not autorise:
+        raise PermissionDenied(
+            "Vous ne pouvez pas ajouter de pièce jointe à ce courrier."
+        )
+
+    if request.method == "POST":
+        form = PieceJointeForm(request.POST, request.FILES)
+
+        if form.is_valid():
+            fichier = form.cleaned_data["fichier"]
+
+            with transaction.atomic():
+                PieceJointe.objects.create(
+                    courrier=obj,
+                    fichier=fichier,
+                    nom_original=fichier.name,
+                    type_mime=getattr(fichier, "content_type", "") or "",
+                    taille=fichier.size,
+                    ajoute_par=request.user
+                )
+
+                enregistrer_historique(
+                    obj,
+                    request.user,
+                    "AJOUT_PIECE_JOINTE",
+                    details=f"Ajout du fichier : {fichier.name}"
+                )
+
+            messages.success(
+                request,
+                "La pièce jointe a été ajoutée."
+            )
+
+            return redirect("detail_courrier", pk=obj.pk)
+
+    else:
+        form = PieceJointeForm()
+
+    return render(
+        request,
+        "courrier/formulaire.html",
+        {
+            "form": form,
+            "courrier": obj,
+            "titre": "Ajouter une pièce jointe",
+            "libelle_bouton": "Ajouter le fichier"
+        }
+    )
+
+
+# =====================================================
+# RETRAIT LOGIQUE D'UNE PIÈCE JOINTE
+# =====================================================
+
+@login_required
+def retirer_piece_jointe(request, pk, piece_id):
+    obj = obtenir_courrier_accessible(request.user, pk)
+
+    piece = get_object_or_404(
+        PieceJointe,
+        pk=piece_id,
+        courrier=obj,
+        active=True
+    )
+
+    profil = obtenir_profil(request.user)
+
+    autorise = (
+        profil == "ADMIN"
+        or utilisateur_peut_modifier_courrier(request.user, obj)
+    )
+
+    if not autorise:
+        raise PermissionDenied(
+            "Vous ne pouvez pas retirer cette pièce jointe."
+        )
+
+    if request.method != "POST":
+        raise PermissionDenied(
+            "Cette opération doit être effectuée par formulaire."
+        )
+
+    motif = request.POST.get(
+        "motif",
+        "Retrait de la pièce jointe."
+    ).strip() or "Retrait de la pièce jointe."
+
+    with transaction.atomic():
+        piece.active = False
+        piece.retire_par = request.user
+        piece.retire_le = timezone.now()
+        piece.motif_retrait = motif
+
+        piece.save(
+            update_fields=[
+                "active",
+                "retire_par",
+                "retire_le",
+                "motif_retrait"
+            ]
+        )
+
+        enregistrer_historique(
+            obj,
+            request.user,
+            "RETRAIT_PIECE_JOINTE",
+            details=f"Retrait logique du fichier : {piece.nom_original}",
+            motif=motif
+        )
+
+    messages.success(
+        request,
+        "La pièce jointe a été retirée de la fiche. Le fichier n'a pas été supprimé physiquement."
+    )
+
+    return redirect("detail_courrier", pk=obj.pk)
+
+
+# =====================================================
+# CONFIRMATION DE RÉCEPTION
+# =====================================================
+
+@login_required
+def confirmer_reception(request, pk):
+    if request.method != "POST":
+        raise PermissionDenied(
+            "La confirmation doit être effectuée par formulaire."
+        )
+
+    obj = obtenir_courrier_accessible(request.user, pk)
+    profil = obtenir_profil(request.user)
+
+    if profil != "RESPONSABLE":
+        raise PermissionDenied(
+            "Seul le responsable du service destinataire peut confirmer la réception."
+        )
+
+    if obj.sens != "ENTRANT" or not obj.service_id:
+        raise PermissionDenied(
+            "Ce courrier ne peut pas faire l'objet d'une confirmation de réception."
+        )
+
+    if obj.service.responsable_id != request.user.pk:
+        raise PermissionDenied(
+            "Vous n'êtes pas le responsable du service destinataire."
+        )
+
+    with transaction.atomic():
+        affectation = Affectation.objects.select_for_update().filter(
+            courrier=obj,
+            service=obj.service,
+            active=True
+        ).order_by(
+            "-date_transmission",
+            "-pk"
+        ).first()
+
+        if not affectation:
+            messages.error(
+                request,
+                "Aucune transmission active ne peut être confirmée."
+            )
+            return redirect("detail_courrier", pk=obj.pk)
+
+        if affectation.date_confirmation_reception:
+            messages.warning(
+                request,
+                "La réception de ce courrier a déjà été confirmée."
+            )
+            return redirect("detail_courrier", pk=obj.pk)
+
+        affectation.date_confirmation_reception = timezone.now()
+        affectation.confirme_par = request.user
+
+        affectation.save(
+            update_fields=[
+                "date_confirmation_reception",
+                "confirme_par"
+            ]
+        )
+
+        enregistrer_historique(
+            obj,
+            request.user,
+            "CONFIRMATION_RECEPTION",
+            details=(
+                f"Réception confirmée par le responsable du service "
+                f"{obj.service.nom} le "
+                f"{timezone.localtime().strftime('%d/%m/%Y à %H:%M')}."
+            )
+        )
+
+    messages.success(
+        request,
+        "La réception du courrier a été confirmée."
+    )
+
+    return redirect("detail_courrier", pk=obj.pk)
+\n\n\n==========================================================================================\nFICHIER : courrier/bordereaux.py\n==========================================================================================\n
+from django import forms
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.shortcuts import render, redirect, get_object_or_404
+from django.utils import timezone
+
+from .models import (
+    Courrier,
+    Affectation,
+    Historique,
+    Service,
+    BordereauTransmission,
+    LigneBordereau,
+    ReceptionBordereau,
+)
+
+from .permissions import (
+    obtenir_profil,
+    utilisateur_est_responsable_du_service,
+    utilisateur_peut_transmettre,
+)
+
+
+# ============================================================
+# FORMULAIRE DE CREATION
+# ============================================================
+
+class CreationBordereauForm(forms.Form):
+
+    service = forms.ModelChoiceField(
+        queryset=Service.objects.none(),
+        label="Service destinataire"
+    )
+
+    courriers = forms.ModelMultipleChoiceField(
+        queryset=Courrier.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        label="Courriers à transmettre"
+    )
+
+    instruction = forms.CharField(
+        required=False,
+        label="Instruction de transmission",
+        widget=forms.Textarea(attrs={
+            "rows": 3,
+            "class": "form-control"
+        })
+    )
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.user = user
+
+        self.fields["service"].queryset = (
+            Service.objects
+            .filter(actif=True)
+            .select_related("responsable")
+            .order_by("nom")
+        )
+
+        if user and obtenir_profil(user) == "RESPONSABLE":
+            self.fields["service"].queryset = (
+                Service.objects
+                .filter(responsable=user, actif=True)
+                .order_by("nom")
+            )
+
+        from .views import courriers_accessibles
+
+        accessibles = courriers_accessibles(user)
+
+        self.fields["courriers"].queryset = (
+            accessibles
+            .filter(
+                sens=Courrier.Sens.ENTRANT,
+                statut=Courrier.Statut.ENREGISTRE
+            )
+            .exclude(affectations__active=True)
+            .distinct()
+            .order_by("-cree_le")
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+
+        service = cleaned.get("service")
+        courriers = cleaned.get("courriers")
+
+        if service and (
+            not service.actif or not service.responsable_id
+        ):
+            self.add_error(
+                "service",
+                "Le service doit être actif et posséder un responsable."
+            )
+
+        if service and courriers:
+            for courrier in courriers:
+
+                if courrier.sens != Courrier.Sens.ENTRANT:
+                    self.add_error(
+                        "courriers",
+                        f"Le courrier {courrier.reference} n'est pas entrant."
+                    )
+
+                if courrier.statut != Courrier.Statut.ENREGISTRE:
+                    self.add_error(
+                        "courriers",
+                        f"Le courrier {courrier.reference} n'est plus disponible."
+                    )
+
+                if Affectation.objects.filter(
+                    courrier=courrier,
+                    active=True
+                ).exists():
+                    self.add_error(
+                        "courriers",
+                        f"Le courrier {courrier.reference} possède déjà une transmission active."
+                    )
+
+                if (
+                    courrier.service_id
+                    and courrier.service_id != service.pk
+                ):
+                    self.add_error(
+                        "courriers",
+                        f"Le courrier {courrier.reference} est rattaché à un autre service."
+                    )
+
+        return cleaned
+
+
+# ============================================================
+# FORMULAIRE DE RECEPTION
+# ============================================================
+
+class ReceptionBordereauForm(forms.Form):
+
+    observation = forms.CharField(
+        required=False,
+        label="Observation à la réception",
+        widget=forms.Textarea(attrs={
+            "rows": 4,
+            "class": "form-control",
+            "placeholder": "Observations éventuelles..."
+        })
+    )
+
+
+# ============================================================
+# HISTORIQUE
+# ============================================================
+
+def enregistrer_historique_bordereau(
+    courrier,
+    utilisateur,
+    action,
+    details
+):
+    Historique.objects.create(
+        courrier=courrier,
+        utilisateur=utilisateur,
+        action=action,
+        details=details
+    )
+
+
+# ============================================================
+# LISTE DES BORDEREAUX
+# ============================================================
+
+@login_required
+def liste_bordereaux(request):
+
+    profil = obtenir_profil(request.user)
+
+    profils_autorises = [
+        "ADMIN",
+        "DIRECTION",
+        "ACCUEIL",
+        "SECRETARIAT",
+        "RESPONSABLE",
+    ]
+
+    if profil not in profils_autorises:
+        raise PermissionDenied
+
+    from .views import courriers_accessibles
+
+    accessibles = courriers_accessibles(request.user)
+
+    bordereaux = (
+        BordereauTransmission.objects
+        .select_related("service", "transmis_par")
+        .prefetch_related("lignes__courrier")
+        .filter(lignes__courrier__in=accessibles)
+        .distinct()
+        .order_by("-date_transmission", "-pk")
+    )
+
+    if profil == "RESPONSABLE":
+        bordereaux = bordereaux.filter(
+            service__responsable=request.user
+        )
+
+    return render(
+        request,
+        "courrier/bordereaux/liste.html",
+        {
+            "bordereaux": bordereaux,
+            "profil": profil,
+        }
+    )
+
+
+# ============================================================
+# CREATION D'UN BORDEREAU
+# ============================================================
+
+@login_required
+def creer_bordereau(request):
+
+    profil = obtenir_profil(request.user)
+
+    if profil not in ["ADMIN", "ACCUEIL", "SECRETARIAT"]:
+        raise PermissionDenied
+
+    if request.method == "POST":
+
+        form = CreationBordereauForm(
+            request.POST,
+            user=request.user
+        )
+
+        if form.is_valid():
+
+            service_selectionne = form.cleaned_data["service"]
+            courriers_selectionnes = form.cleaned_data["courriers"]
+            instruction = form.cleaned_data["instruction"]
+
+            identifiants = list(
+                courriers_selectionnes.values_list("pk", flat=True)
+            )
+
+            with transaction.atomic():
+
+                service = (
+                    Service.objects
+                    .select_for_update()
+                    .get(pk=service_selectionne.pk)
+                )
+
+                if not service.actif or not service.responsable_id:
+                    raise PermissionDenied
+
+                courriers_verrouilles = list(
+                    Courrier.objects
+                    .select_for_update()
+                    .filter(pk__in=identifiants)
+                    .order_by("pk")
+                )
+
+                if len(courriers_verrouilles) != len(identifiants):
+                    raise PermissionDenied
+
+                # Vérification de chaque courrier avant transmission.
+                for courrier in courriers_verrouilles:
+
+                    if not utilisateur_peut_transmettre(
+                        request.user,
+                        courrier
+                    ):
+                        raise PermissionDenied
+
+                    if courrier.sens != Courrier.Sens.ENTRANT:
+                        raise PermissionDenied
+
+                    if courrier.statut != Courrier.Statut.ENREGISTRE:
+                        raise PermissionDenied
+
+                    if Affectation.objects.filter(
+                        courrier=courrier,
+                        active=True
+                    ).exists():
+                        raise PermissionDenied
+
+                    if (
+                        courrier.service_id
+                        and courrier.service_id != service.pk
+                    ):
+                        raise PermissionDenied
+
+                # Création du bordereau.
+                bordereau = BordereauTransmission.objects.create(
+                    service=service,
+                    transmis_par=request.user
+                )
+
+                for courrier in courriers_verrouilles:
+
+                    LigneBordereau.objects.create(
+                        bordereau=bordereau,
+                        courrier=courrier
+                    )
+
+                    Affectation.objects.create(
+                        courrier=courrier,
+                        service=service,
+                        agent=None,
+                        transmis_par=request.user,
+                        date_transmission=timezone.now(),
+                        instruction=instruction,
+                        active=True,
+                        statut="TRANSMIS"
+                    )
+
+                    courrier.service = service
+                    courrier.responsable = service.responsable
+                    courrier.statut = Courrier.Statut.TRANSMIS
+
+                    courrier.save(
+                        update_fields=[
+                            "service",
+                            "responsable",
+                            "statut",
+                            "modifie_le"
+                        ]
+                    )
+
+                    enregistrer_historique_bordereau(
+                        courrier,
+                        request.user,
+                        "TRANSMISSION_BORDEREAU",
+                        (
+                            f"Courrier transmis au service {service.nom} "
+                            f"par le bordereau numéro {bordereau.pk}."
+                        )
+                    )
+
+            messages.success(
+                request,
+                f"Bordereau numéro {bordereau.pk} créé avec succès."
+            )
+
+            return redirect(
+                "detail_bordereau",
+                pk=bordereau.pk
+            )
+
+    else:
+
+        form = CreationBordereauForm(
+            user=request.user
+        )
+
+    return render(
+        request,
+        "courrier/bordereaux/formulaire.html",
+        {
+            "form": form
+        }
+    )
+
+
+# ============================================================
+# DETAIL D'UN BORDEREAU
+# ============================================================
+
+@login_required
+def detail_bordereau(request, pk):
+
+    profil = obtenir_profil(request.user)
+
+    bordereau = get_object_or_404(
+        BordereauTransmission.objects.select_related(
+            "service",
+            "transmis_par"
+        ),
+        pk=pk
+    )
+
+    autorise = (
+        profil in [
+            "ADMIN",
+            "DIRECTION",
+            "ACCUEIL",
+            "SECRETARIAT"
+        ]
+        or (
+            profil == "RESPONSABLE"
+            and utilisateur_est_responsable_du_service(
+                request.user,
+                bordereau.service
+            )
+        )
+    )
+
+    if not autorise:
+        raise PermissionDenied
+
+    from .views import courriers_accessibles
+
+    accessibles = courriers_accessibles(request.user)
+
+    lignes = (
+        LigneBordereau.objects
+        .filter(
+            bordereau=bordereau,
+            courrier__in=accessibles
+        )
+        .select_related("courrier")
+        .order_by("pk")
+    )
+
+    if not lignes.exists():
+        raise PermissionDenied
+
+    peut_receptionner = (
+        profil == "RESPONSABLE"
+        and utilisateur_est_responsable_du_service(
+            request.user,
+            bordereau.service
+        )
+        and bordereau.statut == "TRANSMIS"
+    )
+
+    reception = getattr(
+        bordereau,
+        "reception",
+        None
+    )
+
+    return render(
+        request,
+        "courrier/bordereaux/detail.html",
+        {
+            "bordereau": bordereau,
+            "lignes": lignes,
+            "reception": reception,
+            "peut_receptionner": peut_receptionner,
+        }
+    )
+
+
+# ============================================================
+# RECEPTION COLLECTIVE D'UN BORDEREAU
+# ============================================================
+
+@login_required
+def receptionner_bordereau(request, pk):
+
+    if request.method != "POST":
+        raise PermissionDenied
+
+    profil = obtenir_profil(request.user)
+
+    bordereau = get_object_or_404(
+        BordereauTransmission.objects.select_related("service"),
+        pk=pk
+    )
+
+    if (
+        profil != "RESPONSABLE"
+        or not utilisateur_est_responsable_du_service(
+            request.user,
+            bordereau.service
+        )
+    ):
+        raise PermissionDenied
+
+    form = ReceptionBordereauForm(request.POST)
+
+    if not form.is_valid():
+
+        messages.error(
+            request,
+            "Les informations de réception sont invalides."
+        )
+
+        return redirect(
+            "detail_bordereau",
+            pk=pk
+        )
+
+    with transaction.atomic():
+
+        bordereau = (
+            BordereauTransmission.objects
+            .select_for_update()
+            .select_related("service")
+            .get(pk=pk)
+        )
+
+        if not utilisateur_est_responsable_du_service(
+            request.user,
+            bordereau.service
+        ):
+            raise PermissionDenied
+
+        if bordereau.statut != "TRANSMIS":
+
+            messages.warning(
+                request,
+                "Ce bordereau a déjà été réceptionné."
+            )
+
+            return redirect(
+                "detail_bordereau",
+                pk=pk
+            )
+
+        lignes = list(
+            LigneBordereau.objects
+            .filter(bordereau=bordereau)
+            .select_related("courrier")
+            .order_by("pk")
+        )
+
+        if not lignes:
+            messages.error(
+                request,
+                "Ce bordereau ne contient aucun courrier."
+            )
+
+            return redirect(
+                "detail_bordereau",
+                pk=pk
+            )
+
+        ReceptionBordereau.objects.create(
+            bordereau=bordereau,
+            service=bordereau.service,
+            receptionne_par=request.user,
+            observation=form.cleaned_data["observation"]
+        )
+
+        bordereau.statut = "RECEPTIONNE"
+
+        bordereau.save(
+            update_fields=["statut"]
+        )
+
+        for ligne in lignes:
+
+            affectation = (
+                Affectation.objects
+                .select_for_update()
+                .filter(
+                    courrier=ligne.courrier,
+                    service=bordereau.service,
+                    active=True
+                )
+                .order_by("-date_transmission", "-pk")
+                .first()
+            )
+
+            if affectation and not affectation.date_confirmation_reception:
+
+                affectation.date_confirmation_reception = timezone.now()
+                affectation.confirme_par = request.user
+
+                affectation.save(
+                    update_fields=[
+                        "date_confirmation_reception",
+                        "confirme_par"
+                    ]
+                )
+
+            enregistrer_historique_bordereau(
+                ligne.courrier,
+                request.user,
+                "RECEPTION_BORDEREAU",
+                (
+                    f"Réception confirmée par {request.user} "
+                    f"pour le bordereau numéro {bordereau.pk}."
+                )
+            )
+
+    messages.success(
+        request,
+        "La réception du bordereau et de ses courriers a été enregistrée."
+    )
+
+    return redirect(
+        "detail_bordereau",
+        pk=pk
+    )
+\n\n\n==========================================================================================\nFICHIER : courrier/exports.py\n==========================================================================================\n
+from io import BytesIO
+
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.db.models import Q
+from django.http import HttpResponse
+from django.utils import timezone
+
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.utils import get_column_letter
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Table,
+    TableStyle,
+    Paragraph,
+    Spacer,
+)
+
+from .models import Courrier
+from .views import courriers_accessibles
+
+
+def obtenir_courriers_export(request):
+    """
+    Récupère uniquement les courriers accessibles
+    à l'utilisateur connecté et applique les filtres.
+    """
+
+    courriers = courriers_accessibles(request.user)
+
+    recherche = request.GET.get("q", "").strip()
+    sens = request.GET.get("sens", "").strip()
+    statut = request.GET.get("statut", "").strip()
+
+    if recherche:
+        courriers = courriers.filter(
+            Q(reference__icontains=recherche)
+            | Q(objet__icontains=recherche)
+            | Q(expediteur__icontains=recherche)
+            | Q(destinataire__icontains=recherche)
+            | Q(description__icontains=recherche)
+        )
+
+    if sens in [
+        Courrier.Sens.ENTRANT,
+        Courrier.Sens.SORTANT,
+    ]:
+        courriers = courriers.filter(sens=sens)
+
+    statuts_valides = [
+        choix[0] for choix in Courrier.Statut.choices
+    ]
+
+    if statut in statuts_valides:
+        courriers = courriers.filter(statut=statut)
+
+    return courriers.select_related(
+        "service",
+        "responsable",
+        "categorie",
+        "cree_par",
+    ).order_by("-date_courrier", "-pk")
+
+
+def valeur_texte(valeur):
+    if valeur is None:
+        return ""
+
+    return str(valeur)
+
+
+@login_required
+def exporter_courriers_excel(request):
+    courriers = obtenir_courriers_export(request)
+
+    if not courriers.exists():
+        return HttpResponse(
+            "Aucun courrier disponible pour cet export.",
+            content_type="text/plain; charset=utf-8",
+            status=404,
+        )
+
+    classeur = Workbook()
+    feuille = classeur.active
+    feuille.title = "Courriers"
+
+    entetes = [
+        "Référence",
+        "Sens",
+        "Date du courrier",
+        "Date réception / expédition",
+        "Expéditeur",
+        "Destinataire",
+        "Objet",
+        "Catégorie",
+        "Service",
+        "Responsable",
+        "Priorité",
+        "Confidentialité",
+        "Statut",
+        "Date limite",
+        "Date de clôture",
+        "Enregistré par",
+        "Date d'enregistrement",
+    ]
+
+    feuille.append(entetes)
+
+    for cellule in feuille[1]:
+        cellule.font = Font(
+            bold=True,
+            color="FFFFFF",
+            size=10,
+        )
+        cellule.fill = PatternFill(
+            fill_type="solid",
+            fgColor="17365D",
+        )
+        cellule.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+            wrap_text=True,
+        )
+
+    for courrier in courriers.iterator():
+        feuille.append([
+            valeur_texte(courrier.reference),
+            courrier.get_sens_display(),
+            courrier.date_courrier,
+            courrier.date_reception_expedition,
+            valeur_texte(courrier.expediteur),
+            valeur_texte(courrier.destinataire),
+            valeur_texte(courrier.objet),
+            valeur_texte(courrier.categorie),
+            valeur_texte(courrier.service),
+            valeur_texte(courrier.responsable),
+            courrier.get_priorite_display(),
+            courrier.get_confidentialite_display(),
+            courrier.get_statut_display(),
+            courrier.date_limite,
+            courrier.date_cloture,
+            valeur_texte(courrier.cree_par),
+            courrier.cree_le.replace(tzinfo=None)
+            if courrier.cree_le else None,
+        ])
+
+    largeurs = [
+        22, 14, 15, 22, 25, 25, 40, 20, 22,
+        22, 16, 20, 18, 15, 15, 22, 22,
+    ]
+
+    for index, largeur in enumerate(largeurs, start=1):
+        feuille.column_dimensions[
+            get_column_letter(index)
+        ].width = largeur
+
+    feuille.freeze_panes = "A2"
+    feuille.auto_filter.ref = feuille.dimensions
+    feuille.row_dimensions[1].height = 32
+
+    for ligne in feuille.iter_rows(min_row=2):
+        for cellule in ligne:
+            cellule.alignment = Alignment(
+                vertical="top",
+                wrap_text=True,
+            )
+
+        for numero_colonne in [3, 4, 14, 15]:
+            ligne[numero_colonne - 1].number_format = "DD/MM/YYYY"
+
+        ligne[16].number_format = "DD/MM/YYYY HH:MM"
+
+    tampon = BytesIO()
+    classeur.save(tampon)
+    tampon.seek(0)
+
+    nom_fichier = (
+        f"GSC_Courriers_{timezone.localdate():%Y%m%d}.xlsx"
+    )
+
+    response = HttpResponse(
+        tampon.getvalue(),
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+    )
+
+    response["Content-Disposition"] = (
+        f'attachment; filename="{nom_fichier}"'
+    )
+
+    return response
+
+
+@login_required
+def exporter_courriers_pdf(request):
+    courriers = obtenir_courriers_export(request)
+
+    if not courriers.exists():
+        return HttpResponse(
+            "Aucun courrier disponible pour cet export.",
+            content_type="text/plain; charset=utf-8",
+            status=404,
+        )
+
+    tampon = BytesIO()
+
+    document = SimpleDocTemplate(
+        tampon,
+        pagesize=landscape(A4),
+        rightMargin=10 * mm,
+        leftMargin=10 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+        title="GSC - Liste des courriers",
+        author="GSC",
+    )
+
+    styles = getSampleStyleSheet()
+
+    titre_style = ParagraphStyle(
+        "TitreGSC",
+        parent=styles["Title"],
+        fontName="Helvetica-Bold",
+        fontSize=15,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor("#17365D"),
+        spaceAfter=8,
+    )
+
+    info_style = ParagraphStyle(
+        "InfoGSC",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=8,
+        alignment=TA_LEFT,
+        spaceAfter=8,
+    )
+
+    cellule_style = ParagraphStyle(
+        "CelluleGSC",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=6.5,
+        leading=8,
+        alignment=TA_LEFT,
+    )
+
+    entete_style = ParagraphStyle(
+        "EnteteGSC",
+        parent=cellule_style,
+        fontName="Helvetica-Bold",
+        textColor=colors.white,
+        alignment=TA_CENTER,
+    )
+
+    elements = []
+
+    elements.append(
+        Paragraph(
+            "GSC - GESTION ET SUIVI DU COURRIER",
+            titre_style,
+        )
+    )
+
+    elements.append(
+        Paragraph(
+            (
+                f"État des courriers au "
+                f"{timezone.localtime():%d/%m/%Y à %H:%M}"
+                f" | Nombre de courriers : {courriers.count()}"
+            ),
+            info_style,
+        )
+    )
+
+    entetes = [
+        "Référence",
+        "Date",
+        "Sens",
+        "Expéditeur",
+        "Destinataire",
+        "Objet",
+        "Service",
+        "Statut",
+    ]
+
+    donnees = [
+        [Paragraph(titre, entete_style) for titre in entetes]
+    ]
+
+    for courrier in courriers.iterator():
+        valeurs = [
+            valeur_texte(courrier.reference),
+            courrier.date_courrier.strftime("%d/%m/%Y"),
+            courrier.get_sens_display(),
+            valeur_texte(courrier.expediteur),
+            valeur_texte(courrier.destinataire),
+            valeur_texte(courrier.objet),
+            valeur_texte(courrier.service),
+            courrier.get_statut_display(),
+        ]
+
+        donnees.append([
+            Paragraph(
+                valeur.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;"),
+                cellule_style,
+            )
+            for valeur in valeurs
+        ])
+
+    tableau = Table(
+        donnees,
+        colWidths=[
+            27 * mm,
+            18 * mm,
+            18 * mm,
+            35 * mm,
+            35 * mm,
+            65 * mm,
+            35 * mm,
+            25 * mm,
+        ],
+        repeatRows=1,
+    )
+
+    tableau.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#17365D")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D5DDE8")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+            colors.white,
+            colors.HexColor("#F1F5FA"),
+        ]),
+    ]))
+
+    elements.append(table)
+
+    document.build(elements)
+
+    tampon.seek(0)
+
+    nom_fichier = (
+        f"GSC_Courriers_{timezone.localdate():%Y%m%d}.pdf"
+    )
+
+    response = HttpResponse(
+        tampon.getvalue(),
+        content_type="application/pdf",
+    )
+
+    response["Content-Disposition"] = (
+        f'attachment; filename="{nom_fichier}"'
+    )
+
+    return response
+\n\n\n==========================================================================================\nFICHIER : courrier/urls.py\n==========================================================================================\n
+from django.urls import path
+
+from . import views
+from . import bordereaux
+from . import exports
+
+
+urlpatterns = [
+
+    # TABLEAU DE BORD ET CONSULTATION
+    path(
+        "dashboard/",
+        views.dashboard,
+        name="dashboard_interne"
+    ),
+
+    path(
+        "",
+        views.liste_courriers,
+        name="liste_courriers"
+    ),
+
+    # ENREGISTREMENT
+    path(
+        "nouveau/",
+        views.nouveau_courrier,
+        name="nouveau_courrier"
+    ),
+
+    # EXPORTATIONS EXCEL ET PDF
+    path(
+        "exporter/excel/",
+        exports.exporter_courriers_excel,
+        name="exporter_courriers_excel"
+    ),
+
+    path(
+        "exporter/pdf/",
+        exports.exporter_courriers_pdf,
+        name="exporter_courriers_pdf"
+    ),
+
+    # BORDEREAUX DE TRANSMISSION COLLECTIVE
+    path(
+        "bordereaux/",
+        bordereaux.liste_bordereaux,
+        name="liste_bordereaux"
+    ),
+
+    path(
+        "bordereaux/nouveau/",
+        bordereaux.creer_bordereau,
+        name="creer_bordereau"
+    ),
+
+    path(
+        "bordereaux/<int:pk>/",
+        bordereaux.detail_bordereau,
+        name="detail_bordereau"
+    ),
+
+    path(
+        "bordereaux/<int:pk>/receptionner/",
+        bordereaux.receptionner_bordereau,
+        name="receptionner_bordereau"
+    ),
+
+    # DETAIL ET MODIFICATION
+    path(
+        "<int:pk>/",
+        views.detail_courrier,
+        name="detail_courrier"
+    ),
+
+    path(
+        "<int:pk>/modifier/",
+        views.modifier_courrier,
+        name="modifier_courrier"
+    ),
+
+    # TRANSMISSION ET AFFECTATION
+    path(
+        "<int:pk>/transmettre/",
+        views.transmettre_courrier,
+        name="transmettre_courrier"
+    ),
+
+    path(
+        "<int:pk>/affecter-agent/",
+        views.affecter_agent,
+        name="affecter_agent"
+    ),
+
+    # CONFIRMATION DE RECEPTION
+    path(
+        "<int:pk>/confirmer-reception/",
+        views.confirmer_reception,
+        name="confirmer_reception"
+    ),
+
+    # TRAITEMENT
+    path(
+        "<int:pk>/traiter/",
+        views.traiter_courrier,
+        name="traiter_courrier"
+    ),
+
+    # RETOUR AU SECRETARIAT
+    path(
+        "<int:pk>/retourner/",
+        views.retourner_courrier,
+        name="retourner_courrier"
+    ),
+
+    # CLOTURE ET REOUVERTURE
+    path(
+        "<int:pk>/cloturer/",
+        views.cloturer_courrier,
+        name="cloturer_courrier"
+    ),
+
+    path(
+        "<int:pk>/reouvrir/",
+        views.reouvrir_courrier,
+        name="reouvrir_courrier"
+    ),
+
+    # PIECES JOINTES
+    path(
+        "<int:pk>/pieces-jointes/ajouter/",
+        views.ajouter_piece_jointe,
+        name="ajouter_piece_jointe"
+    ),
+
+    path(
+        "<int:pk>/pieces-jointes/<int:piece_id>/retirer/",
+        views.retirer_piece_jointe,
+        name="retirer_piece_jointe"
+    ),
+]
+\n\n\n==========================================================================================\nFICHIER : templates/base.html\n==========================================================================================\n
+<!doctype html>
+<html lang="fr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>{% block title %}GSC – Gestion du courrier{% endblock %}</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            background: #f4f6fa;
+            color: #243247;
+        }
+
+        .sidebar {
+            background: #14243a;
+            min-height: 100vh;
+        }
+
+        .sidebar a {
+            color: #d9e2ef;
+            text-decoration: none;
+            display: block;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 4px;
+        }
+
+        .sidebar a:hover {
+            background: #263b55;
+        }
+
+        .brand {
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        .stat {
+            border: 0;
+            border-radius: 14px;
+            box-shadow: 0 3px 14px #172b4d0d;
+        }
+
+        .alert {
+            border-radius: 10px;
+            margin-bottom: 18px;
+        }
+
+        .message-container {
+            max-width: 100%;
+        }
+
+        @media (max-width: 767px) {
+            .sidebar {
+                min-height: auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container-fluid">
+    <div class="row">
+
+        {% if user.is_authenticated %}
+        <aside class="col-md-2 sidebar p-3">
+
+            <div class="text-white brand fs-4 mb-4">
+                GSC
+                <small class="d-block text-secondary fs-6">
+                    Gestion du courrier
+                </small>
+            </div>
+
+            <a href="{% url 'dashboard_interne' %}">
+                <i class="bi bi-speedometer2 me-2"></i>Tableau de bord
+            </a>
+
+            <a href="{% url 'liste_courriers' %}">
+                <i class="bi bi-inbox me-2"></i>Tous les courriers
+            </a>
+
+            <a href="{% url 'nouveau_courrier' %}">
+                <i class="bi bi-plus-circle me-2"></i>Nouveau courrier
+            </a>
+
+            <a href="{% url 'liste_bordereaux' %}">
+                <i class="bi bi-file-earmark-text me-2"></i>
+                Bordereaux de transmission
+            </a>
+
+            <hr class="border-secondary">
+
+            <a href="/admin/">
+                <i class="bi bi-gear me-2"></i>Administration
+            </a>
+
+            <form method="post" action="{% url 'logout' %}" class="mt-3">
+                {% csrf_token %}
+                <button class="btn btn-outline-light btn-sm w-100">
+                    <i class="bi bi-box-arrow-right me-2"></i>
+                    Déconnexion
+                </button>
+            </form>
+
+        </aside>
+        {% endif %}
+
+        <main class="{% if user.is_authenticated %}col-md-10{% else %}col-12{% endif %} p-4">
+
+            {% if user.is_authenticated %}
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <span class="text-secondary">Espace de gestion</span>
+                <span class="fw-semibold">
+                    <i class="bi bi-person-circle me-1"></i>
+                    {{ user.username }}
+                </span>
+            </div>
+            {% endif %}
+
+            <!-- MESSAGES DE CONFIRMATION ET D'ERREUR -->
+            <div class="message-container">
+
+                {% if messages %}
+                    {% for message in messages %}
+
+                        <div class="alert
+                            {% if 'error' in message.tags %}alert-danger
+                            {% elif 'success' in message.tags %}alert-success
+                            {% elif 'warning' in message.tags %}alert-warning
+                            {% else %}alert-info{% endif %}
+                            alert-dismissible fade show"
+                            role="alert">
+
+                            {% if 'success' in message.tags %}
+                                <i class="bi bi-check-circle-fill me-2"></i>
+                            {% elif 'error' in message.tags %}
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            {% elif 'warning' in message.tags %}
+                                <i class="bi bi-exclamation-circle-fill me-2"></i>
+                            {% else %}
+                                <i class="bi bi-info-circle-fill me-2"></i>
+                            {% endif %}
+
+                            {{ message }}
+
+                            <button type="button"
+                                    class="btn-close"
+                                    data-bs-dismiss="alert"
+                                    aria-label="Fermer">
+                            </button>
+
+                        </div>
+
+                    {% endfor %}
+                {% endif %}
+
+            </div>
+
+            {% block content %}{% endblock %}
+
+        </main>
+
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+</html>
+\n\n\n==========================================================================================\nFICHIER : templates/courrier/dashboard.html\n==========================================================================================\n
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container-fluid">
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="fw-bold mb-1">Tableau de bord GSC</h2>
+            <p class="text-secondary mb-0">Gestion et suivi du courrier - GMC Assurances</p>
+        </div>
+
+        <a href="{% url 'nouveau_courrier' %}" class="btn btn-primary mt-2">
+            <i class="bi bi-plus-circle"></i> Enregistrer un courrier
+        </a>
+    </div>
+
+    <!-- STATISTIQUES PRINCIPALES -->
+    <div class="row g-3 mb-4">
+
+        <div class="col-xl-3 col-md-6">
+            <a href="{% url 'liste_courriers' %}" class="text-decoration-none">
+                <div class="card shadow-sm border-0 h-100 dashboard-card">
+                    <div class="card-body">
+                        <div class="text-secondary">Total courriers</div>
+                        <h2 class="fw-bold text-primary">{{ total }}</h2>
+                        <i class="bi bi-folder2-open fs-3 text-primary"></i>
+                        <div class="small text-primary mt-2">Voir tous les courriers →</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <a href="{% url 'liste_courriers' %}?categorie=entrants" class="text-decoration-none">
+                <div class="card shadow-sm border-0 h-100 dashboard-card">
+                    <div class="card-body">
+                        <div class="text-secondary">Courriers entrants</div>
+                        <h2 class="fw-bold text-info">{{ entrants }}</h2>
+                        <i class="bi bi-inbox fs-3 text-info"></i>
+                        <div class="small text-info mt-2">Voir les entrants →</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <a href="{% url 'liste_courriers' %}?categorie=sortants" class="text-decoration-none">
+                <div class="card shadow-sm border-0 h-100 dashboard-card">
+                    <div class="card-body">
+                        <div class="text-secondary">Courriers sortants</div>
+                        <h2 class="fw-bold text-success">{{ sortants }}</h2>
+                        <i class="bi bi-send fs-3 text-success"></i>
+                        <div class="small text-success mt-2">Voir les sortants →</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+
+        <div class="col-xl-3 col-md-6">
+            <a href="{% url 'liste_courriers' %}?categorie=en_cours" class="text-decoration-none">
+                <div class="card shadow-sm border-0 h-100 dashboard-card">
+                    <div class="card-body">
+                        <div class="text-secondary">En cours de traitement</div>
+                        <h2 class="fw-bold text-warning">{{ en_cours }}</h2>
+                        <i class="bi bi-clock-history fs-3 text-warning"></i>
+                        <div class="small text-warning mt-2">Voir les courriers →</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+
+    </div>
+
+    <!-- STATISTIQUES SECONDAIRES -->
+    <div class="row g-3 mb-4">
+
+        <div class="col-md-6">
+            <a href="{% url 'liste_courriers' %}?categorie=traites" class="text-decoration-none">
+                <div class="card shadow-sm border-0 h-100 dashboard-card">
+                    <div class="card-body">
+                        <div class="text-secondary">Courriers traités / clôturés</div>
+                        <h3 class="fw-bold text-success">{{ traites }}</h3>
+                        <div class="small text-success mt-2">Voir les courriers →</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+
+        <div class="col-md-6">
+            <a href="{% url 'liste_courriers' %}?categorie=en_retard" class="text-decoration-none">
+                <div class="card shadow-sm border-0 h-100 dashboard-card">
+                    <div class="card-body">
+                        <div class="text-secondary">Courriers en retard</div>
+                        <h3 class="fw-bold text-danger">{{ en_retard }}</h3>
+                        <div class="small text-danger mt-2">Voir les retards →</div>
+                    </div>
+                </div>
+            </a>
+        </div>
+
+    </div>
+
+    <!-- RACCOURCIS -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <h5 class="fw-bold mb-3">Accès rapide</h5>
+
+            <div class="d-flex flex-wrap gap-2">
+                <a href="{% url 'nouveau_courrier' %}" class="btn btn-outline-primary">
+                    <i class="bi bi-plus-circle"></i> Nouveau courrier
+                </a>
+
+                <a href="{% url 'liste_courriers' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-list-ul"></i> Registre des courriers
+                </a>
+
+                <a href="/admin/courrier/service/" class="btn btn-outline-secondary">
+                    <i class="bi bi-building"></i> Gestion des services
+                </a>
+
+                <a href="/admin/auth/user/" class="btn btn-outline-secondary">
+                    <i class="bi bi-people"></i> Gestion des utilisateurs
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- DERNIERS COURRIERS -->
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white py-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="fw-bold mb-0">Derniers courriers enregistrés</h5>
+                <a href="{% url 'liste_courriers' %}" class="btn btn-sm btn-outline-primary">
+                    Voir tout
+                </a>
+            </div>
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Référence</th>
+                            <th>Sens</th>
+                            <th>Date</th>
+                            <th>Objet</th>
+                            <th>Service</th>
+                            <th>Statut</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for c in recents %}
+                        <tr>
+                            <td class="fw-semibold">{{ c.reference }}</td>
+                            <td>
+                                {% if c.sens == "ENTRANT" %}
+                                    <span class="badge bg-info">Entrant</span>
+                                {% else %}
+                                    <span class="badge bg-success">Sortant</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ c.date_reception_expedition|date:"d/m/Y" }}</td>
+                            <td>{{ c.objet }}</td>
+                            <td>{{ c.service|default:"Non affecté" }}</td>
+                            <td>{{ c.get_statut_display }}</td>
+                            <td>
+                                <a href="{% url 'detail_courrier' c.pk %}" class="btn btn-sm btn-outline-primary">
+                                    Consulter
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4 text-secondary">
+                                Aucun courrier enregistré pour le moment.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<style>
+.dashboard-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+}
+.dashboard-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.12) !important;
+}
+</style>
+
+{% endblock %}
+\n\n\n==========================================================================================\nFICHIER : templates/courrier/liste.html\n==========================================================================================\n
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container-fluid">
+
+    <!-- EN-TETE -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="fw-bold">{{ filtre_titre|default:"Registre des courriers" }}</h2>
+            <p class="text-secondary mb-0">
+                Registre et suivi des courriers
+            </p>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{% url 'exporter_courriers_excel' %}?q={{ q|urlencode }}&sens={{ sens }}&statut={{ statut }}"
+               class="btn btn-success">
+                <i class="bi bi-file-earmark-excel"></i>
+                Exporter Excel
+            </a>
+
+            <a href="{% url 'exporter_courriers_pdf' %}?q={{ q|urlencode }}&sens={{ sens }}&statut={{ statut }}"
+               class="btn btn-danger">
+                <i class="bi bi-file-earmark-pdf"></i>
+                Exporter PDF
+            </a>
+
+            <a href="{% url 'nouveau_courrier' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i>
+                Nouveau courrier
+            </a>
+        </div>
+    </div>
+
+    <!-- FILTRES -->
+    <div class="card shadow-sm border-0 mb-3">
+        <div class="card-body">
+
+            <form method="GET" class="row g-2">
+
+                <input type="hidden" name="categorie" value="{{ categorie }}">
+
+                <div class="col-md-5">
+                    <input class="form-control" name="q" value="{{ q }}"
+                           placeholder="Référence, objet, expéditeur, destinataire">
+                </div>
+
+                <div class="col-md-2">
+                    <select class="form-select" name="sens">
+                        <option value="">Tous les sens</option>
+                        <option value="ENTRANT" {% if sens == "ENTRANT" %}selected{% endif %}>Entrant</option>
+                        <option value="SORTANT" {% if sens == "SORTANT" %}selected{% endif %}>Sortant</option>
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <select class="form-select" name="statut">
+                        <option value="">Tous les statuts</option>
+                        <option value="ENREGISTRE" {% if statut == "ENREGISTRE" %}selected{% endif %}>Enregistré</option>
+                        <option value="TRANSMIS" {% if statut == "TRANSMIS" %}selected{% endif %}>Transmis</option>
+                        <option value="EN_COURS" {% if statut == "EN_COURS" %}selected{% endif %}>En cours</option>
+                        <option value="EN_ATTENTE" {% if statut == "EN_ATTENTE" %}selected{% endif %}>En attente</option>
+                        <option value="TRAITE" {% if statut == "TRAITE" %}selected{% endif %}>Traité</option>
+                        <option value="CLOTURE" {% if statut == "CLOTURE" %}selected{% endif %}>Clôturé</option>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-search"></i>
+                        Rechercher
+                    </button>
+                </div>
+
+            </form>
+
+            {% if categorie or q or sens or statut %}
+            <div class="mt-3">
+                <a href="{% url 'liste_courriers' %}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-circle"></i>
+                    Effacer les filtres
+                </a>
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+    <!-- TABLEAU DES COURRIERS -->
+    <div class="card border-0 shadow-sm">
+
+        <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center">
+
+            <div>
+                <strong>{{ paginator.count }}</strong>
+                courrier(s) trouvé(s)
+                <span class="text-secondary ms-2">
+                    Page {{ page_obj.number }} sur {{ paginator.num_pages|default:1 }}
+                </span>
+            </div>
+
+            <form method="GET" class="d-flex align-items-center gap-2">
+                <input type="hidden" name="categorie" value="{{ categorie }}">
+                <input type="hidden" name="q" value="{{ q }}">
+                <input type="hidden" name="sens" value="{{ sens }}">
+                <input type="hidden" name="statut" value="{{ statut }}">
+
+                <label for="par_page" class="text-secondary small">Afficher :</label>
+
+                <select name="par_page" id="par_page"
+                        class="form-select form-select-sm"
+                        style="width: 85px;"
+                        onchange="this.form.submit()">
+                    <option value="10" {% if nombre_par_page == "10" %}selected{% endif %}>10</option>
+                    <option value="25" {% if nombre_par_page == "25" %}selected{% endif %}>25</option>
+                    <option value="50" {% if nombre_par_page == "50" %}selected{% endif %}>50</option>
+                    <option value="100" {% if nombre_par_page == "100" %}selected{% endif %}>100</option>
+                </select>
+
+                <span class="text-secondary small">par page</span>
+            </form>
+
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Référence</th>
+                            <th>Date</th>
+                            <th>Sens</th>
+                            <th>Expéditeur</th>
+                            <th>Destinataire</th>
+                            <th>Objet</th>
+                            <th>Statut</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        {% for c in courriers %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'detail_courrier' c.pk %}"
+                                   class="fw-semibold text-decoration-none">
+                                    {{ c.reference }}
+                                </a>
+                            </td>
+                            <td>{{ c.date_reception_expedition|date:"d/m/Y" }}</td>
+                            <td>
+                                {% if c.sens == "ENTRANT" %}
+                                    <span class="badge bg-info">Entrant</span>
+                                {% else %}
+                                    <span class="badge bg-success">Sortant</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ c.expediteur }}</td>
+                            <td>{{ c.destinataire }}</td>
+                            <td>{{ c.objet }}</td>
+                            <td>{{ c.get_statut_display }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center py-4 text-secondary">
+                                Aucun courrier ne correspond à cette sélection.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+
+            </div>
+        </div>
+
+        <!-- PAGINATION -->
+        {% if page_obj.has_other_pages %}
+        <div class="card-footer bg-white">
+            <nav aria-label="Navigation des pages">
+                <ul class="pagination justify-content-center mb-0 flex-wrap">
+
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens }}&statut={{ statut }}">Première</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens }}&statut={{ statut }}">Précédent</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Première</span></li>
+                    <li class="page-item disabled"><span class="page-link">Précédent</span></li>
+                    {% endif %}
+
+                    {% for num in paginator.page_range %}
+                        {% if num == page_obj.number %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num > page_obj.number|add:"-3" and num < page_obj.number|add:"3" %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens }}&statut={{ statut }}">{{ num }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens }}&statut={{ statut }}">Suivant</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ paginator.num_pages }}&par_page={{ nombre_par_page }}&categorie={{ categorie|urlencode }}&q={{ q|urlencode }}&sens={{ sens }}&statut={{ statut }}">Dernière</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Suivant</span></li>
+                    <li class="page-item disabled"><span class="page-link">Dernière</span></li>
+                    {% endif %}
+
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+
+    </div>
+
+</div>
+
+{% endblock %}
+\n\n\n==========================================================================================\nFICHIER : templates/courrier/detail.html\n==========================================================================================\n
+{% extends "base.html" %}
+
+{% block title %}{{ courrier.reference }} - GSC{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <div>
+            <h3>{{ courrier.reference }}</h3>
+            <p class="text-muted mb-0">{{ courrier.objet }}</p>
+        </div>
+
+        <a href="{% url 'liste_courriers' %}" class="btn btn-outline-secondary">
+            Retour à la liste
+        </a>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert
+                {% if message.tags == 'error' %}alert-danger
+                {% elif message.tags == 'success' %}alert-success
+                {% elif message.tags == 'warning' %}alert-warning
+                {% else %}alert-info{% endif %}
+                alert-dismissible fade show" role="alert">
+
+                {{ message }}
+
+                <button type="button" class="btn-close"
+                        data-bs-dismiss="alert"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- ACTIONS DISPONIBLES -->
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong>Actions disponibles</strong>
+        </div>
+
+        <div class="card-body d-flex flex-wrap gap-2">
+
+            {% if peut_modifier %}
+                <a href="{% url 'modifier_courrier' courrier.pk %}"
+                   class="btn btn-primary">
+                    Modifier
+                </a>
+            {% endif %}
+
+            {% if peut_confirmer_reception %}
+                <form method="post"
+                      action="{% url 'confirmer_reception' courrier.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-success">
+                        Confirmer la réception
+                    </button>
+                </form>
+            {% endif %}
+
+            {% if peut_transmettre %}
+                <a href="{% url 'transmettre_courrier' courrier.pk %}"
+                   class="btn btn-success">
+                    Transmettre
+                </a>
+            {% endif %}
+
+            {% if peut_affecter_agent %}
+                <a href="{% url 'affecter_agent' courrier.pk %}"
+                   class="btn btn-info">
+                    Affecter à un agent
+                </a>
+            {% endif %}
+
+            {% if peut_traiter %}
+                <a href="{% url 'traiter_courrier' courrier.pk %}"
+                   class="btn btn-warning">
+                    Mettre à jour le traitement
+                </a>
+            {% endif %}
+
+            {% if peut_retourner %}
+                <a href="{% url 'retourner_courrier' courrier.pk %}"
+                   class="btn btn-outline-danger">
+                    Retourner au Secrétariat
+                </a>
+            {% endif %}
+
+            {% if peut_cloturer %}
+                <a href="{% url 'cloturer_courrier' courrier.pk %}"
+                   class="btn btn-dark">
+                    Clôturer
+                </a>
+            {% endif %}
+
+            {% if peut_reouvrir %}
+                <a href="{% url 'reouvrir_courrier' courrier.pk %}"
+                   class="btn btn-outline-warning">
+                    Réouvrir
+                </a>
+            {% endif %}
+
+            {% if peut_ajouter_piece_jointe %}
+                <a href="{% url 'ajouter_piece_jointe' courrier.pk %}"
+                   class="btn btn-outline-primary">
+                    Ajouter une pièce jointe
+                </a>
+            {% endif %}
+
+        </div>
+    </div>
+
+    <!-- INFORMATIONS GENERALES -->
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong>Informations générales</strong>
+        </div>
+
+        <div class="card-body">
+            <div class="row">
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Référence</small>
+                    <p><strong>{{ courrier.reference }}</strong></p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Sens du courrier</small>
+                    <p>{{ courrier.get_sens_display }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Statut</small>
+                    <p>
+                        <span class="badge bg-primary">
+                            {{ courrier.get_statut_display }}
+                        </span>
+                    </p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Date du courrier</small>
+                    <p>{{ courrier.date_courrier|date:"d/m/Y" }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Date de réception / expédition</small>
+                    <p>{{ courrier.date_reception_expedition|date:"d/m/Y" }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Date de réception physique</small>
+                    <p>
+                        {{ courrier.date_reception_physique|date:"d/m/Y H:i"|default:"Non renseignée" }}
+                    </p>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <small class="text-muted">Expéditeur</small>
+                    <p>{{ courrier.expediteur }}</p>
+                </div>
+
+                <div class="col-md-6 mb-3">
+                    <small class="text-muted">Destinataire</small>
+                    <p>{{ courrier.destinataire }}</p>
+                </div>
+
+                <div class="col-md-12 mb-3">
+                    <small class="text-muted">Objet</small>
+                    <p><strong>{{ courrier.objet }}</strong></p>
+                </div>
+
+                <div class="col-md-12 mb-3">
+                    <small class="text-muted">Description / Observations</small>
+                    <p>
+                        {{ courrier.description|default:"Aucune description"|linebreaksbr }}
+                    </p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- INFORMATIONS DE TRAITEMENT -->
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong>Informations de traitement</strong>
+        </div>
+
+        <div class="card-body">
+            <div class="row">
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Catégorie</small>
+                    <p>{{ courrier.categorie|default:"Non définie" }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Priorité</small>
+                    <p>{{ courrier.get_priorite_display }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Confidentialité</small>
+                    <p>{{ courrier.get_confidentialite_display }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Service destinataire</small>
+                    <p>{{ courrier.service|default:"Non affecté" }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Responsable du service</small>
+                    <p>{{ courrier.responsable|default:"Non désigné" }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Date limite</small>
+                    <p>{{ courrier.date_limite|date:"d/m/Y"|default:"Non définie" }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Date d'expédition</small>
+                    <p>{{ courrier.date_expedition|date:"d/m/Y"|default:"Non renseignée" }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Date de clôture</small>
+                    <p>{{ courrier.date_cloture|date:"d/m/Y"|default:"Non clôturé" }}</p>
+                </div>
+
+                <div class="col-md-4 mb-3">
+                    <small class="text-muted">Enregistré par</small>
+                    <p>{{ courrier.cree_par }}</p>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- TRANSMISSIONS ET AFFECTATIONS -->
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong>Historique des transmissions et affectations</strong>
+        </div>
+
+        <div class="card-body">
+
+            {% if affectations %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped">
+                        <thead>
+                            <tr>
+                                <th>Service</th>
+                                <th>Agent</th>
+                                <th>Transmis par</th>
+                                <th>Date</th>
+                                <th>Statut</th>
+                                <th>Réception</th>
+                                <th>Observation</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for affectation in affectations %}
+                                <tr>
+                                    <td>{{ affectation.service }}</td>
+                                    <td>{{ affectation.agent|default:"Non affecté" }}</td>
+                                    <td>{{ affectation.transmis_par }}</td>
+                                    <td>{{ affectation.date_transmission|date:"d/m/Y H:i" }}</td>
+                                    <td>{{ affectation.statut }}</td>
+                                    <td>
+                                        {% if affectation.date_confirmation_reception %}
+                                            Reçu le {{ affectation.date_confirmation_reception|date:"d/m/Y H:i" }}
+                                            <br>
+                                            Par : {{ affectation.confirme_par }}
+                                        {% else %}
+                                            <span class="text-warning">Non confirmé</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {{ affectation.observation|default:affectation.instruction|default:"-" }}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted mb-0">
+                    Aucune transmission enregistrée.
+                </p>
+            {% endif %}
+
+        </div>
+    </div>
+
+    <!-- PIECES JOINTES -->
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong>Pièces jointes</strong>
+        </div>
+
+        <div class="card-body">
+
+            {% if pieces_jointes %}
+                <div class="table-responsive">
+                    <table class="table table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Nom du fichier</th>
+                                <th>Version</th>
+                                <th>Ajouté par</th>
+                                <th>Date d'ajout</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for piece in pieces_jointes %}
+                                <tr>
+                                    <td>{{ piece.nom_original }}</td>
+                                    <td>{{ piece.version }}</td>
+                                    <td>{{ piece.ajoute_par }}</td>
+                                    <td>{{ piece.ajoute_le|date:"d/m/Y H:i" }}</td>
+                                    <td>
+                                        <a href="{{ piece.fichier.url }}"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           class="btn btn-sm btn-outline-primary">
+                                            Consulter
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted mb-0">
+                    Aucune pièce jointe active.
+                </p>
+            {% endif %}
+
+        </div>
+    </div>
+
+    <!-- DOCUMENT HISTORIQUE -->
+
+    {% if courrier.document %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <strong>Ancien document principal</strong>
+            </div>
+
+            <div class="card-body">
+                <a href="{{ courrier.document.url }}"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    Consulter le document
+                </a>
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- HISTORIQUE DES OPERATIONS -->
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong>Historique des opérations</strong>
+        </div>
+
+        <div class="card-body">
+
+            {% if historique %}
+                <div class="table-responsive">
+                    <table class="table table-bordered table-striped">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Utilisateur</th>
+                                <th>Action</th>
+                                <th>Détails</th>
+                                <th>Motif</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for ligne in historique %}
+                                <tr>
+                                    <td>{{ ligne.date_action|date:"d/m/Y H:i" }}</td>
+                                    <td>{{ ligne.utilisateur }}</td>
+                                    <td>{{ ligne.action }}</td>
+                                    <td>{{ ligne.details|linebreaksbr }}</td>
+                                    <td>{{ ligne.motif|default:"-" }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted mb-0">
+                    Aucun historique disponible.
+                </p>
+            {% endif %}
+
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
+\n\n\n==========================================================================================\nFICHIER : templates/courrier/formulaire.html\n==========================================================================================\n
+{% extends "base.html" %}
+
+{% block title %}{{ titre|default:"Formulaire courrier" }} - GSC{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid py-4">
+
+    <!-- EN-TÊTE -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+        <div>
+            <h2 class="fw-bold text-primary mb-1">
+                {{ titre|default:"Gestion du courrier" }}
+            </h2>
+            <p class="text-muted mb-0">
+                GSC - Gestion et Suivi du Courrier
+            </p>
+        </div>
+
+        <a href="{% url 'liste_courriers' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Retour
+        </a>
+    </div>
+
+    <!-- MESSAGES -->
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <!-- ERREURS GÉNÉRALES -->
+    {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            <strong>Veuillez corriger les erreurs suivantes :</strong>
+            {{ form.non_field_errors }}
+        </div>
+    {% endif %}
+
+    <!-- FORMULAIRE -->
+    <form method="post"
+          enctype="multipart/form-data"
+          novalidate>
+
+        {% csrf_token %}
+
+        <div class="card border-0 shadow-sm">
+
+            <div class="card-header bg-white py-3">
+                <h5 class="mb-0 fw-bold">
+                    Informations du formulaire
+                </h5>
+            </div>
+
+            <div class="card-body p-4">
+
+                <div class="row g-4">
+
+                    {% for field in form %}
+
+                        <div class="{% if field.name == 'description' or field.name == 'documents' %}col-12{% else %}col-md-6{% endif %}">
+
+                            {% if field.is_hidden %}
+
+                                {{ field }}
+
+                            {% else %}
+
+                                <label for="{{ field.id_for_label }}"
+                                       class="form-label fw-semibold">
+
+                                    {{ field.label }}
+
+                                    {% if field.field.required %}
+                                        <span class="text-danger">*</span>
+                                    {% endif %}
+
+                                </label>
+
+                                {{ field }}
+
+                                {% if field.help_text %}
+                                    <div class="form-text">
+                                        {{ field.help_text }}
+                                    </div>
+                                {% endif %}
+
+                                {% for error in field.errors %}
+                                    <div class="text-danger small mt-1">
+                                        <i class="bi bi-exclamation-circle"></i>
+                                        {{ error }}
+                                    </div>
+                                {% endfor %}
+
+                            {% endif %}
+
+                        </div>
+
+                    {% endfor %}
+
+                </div>
+
+                <div class="text-muted small mt-4">
+                    <span class="text-danger">*</span>
+                    Champs obligatoires.
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- BOUTONS -->
+        <div class="d-flex flex-wrap justify-content-end gap-2 mt-4">
+
+            <a href="{% url 'liste_courriers' %}"
+               class="btn btn-outline-secondary px-4">
+                Annuler
+            </a>
+
+            <button type="submit"
+                    class="btn btn-primary px-4">
+
+                <i class="bi bi-save"></i>
+                {{ libelle_bouton|default:"Enregistrer" }}
+
+            </button>
+
+        </div>
+
+    </form>
+
+</div>
+
+{% endblock %}
+\n\n\n==========================================================================================\nFICHIER : templates/courrier/confirmation_cloture.html\n==========================================================================================\n
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container mt-5">
+
+    <div class="row justify-content-center">
+
+        <div class="col-md-7">
+
+            <div class="card shadow border-0">
+
+                <div class="card-header bg-danger text-white py-3">
+                    <h4 class="mb-0">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Confirmation de clôture
+                    </h4>
+                </div>
+
+                <div class="card-body p-4">
+
+                    <p class="fs-5">
+                        Voulez-vous vraiment clôturer définitivement ce courrier ?
+                    </p>
+
+                    <div class="alert alert-warning">
+                        <strong>Référence :</strong>
+                        {{ courrier.reference }}
+                        <br>
+
+                        <strong>Objet :</strong>
+                        {{ courrier.objet }}
+                        <br>
+
+                        <strong>Statut actuel :</strong>
+                        {{ courrier.get_statut_display }}
+                    </div>
+
+                    <p class="text-muted">
+                        Cette opération sera enregistrée dans l'historique du courrier.
+                    </p>
+
+                    <form method="POST">
+
+                        {% csrf_token %}
+
+                        <div class="d-flex justify-content-between mt-4">
+
+                            <a href="{% url 'detail_courrier' courrier.pk %}"
+                               class="btn btn-secondary">
+                                Annuler
+                            </a>
+
+                            <button type="submit"
+                                    class="btn btn-danger">
+                                Confirmer la clôture
+                            </button>
+
+                        </div>
+
+                    </form>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}
+\n\n\n==========================================================================================\nFICHIER : templates/courrier/bordereaux/liste.html\n==========================================================================================\n
+{% extends "base.html" %}
+
+{% block title %}Bordereaux de transmission - GSC{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3 mb-4">
+        <div>
+            <h3 class="mb-1">Bordereaux de transmission</h3>
+            <p class="text-muted mb-0">
+                Suivi des transmissions collectives de courriers aux services.
+            </p>
+        </div>
+
+        {% if profil == "ADMIN" or profil == "ACCUEIL" or profil == "SECRETARIAT" %}
+            <a href="{% url 'creer_bordereau' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle"></i>
+                Nouveau bordereau
+            </a>
+        {% endif %}
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+
+            {% if bordereaux %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-striped align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>N° bordereau</th>
+                                <th>Date de transmission</th>
+                                <th>Service destinataire</th>
+                                <th>Transmis par</th>
+                                <th>Nombre de courriers</th>
+                                <th>Statut</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for bordereau in bordereaux %}
+                                <tr>
+                                    <td>
+                                        <strong>BR-{{ bordereau.pk }}</strong>
+                                    </td>
+
+                                    <td>
+                                        {{ bordereau.date_transmission|date:"d/m/Y H:i" }}
+                                    </td>
+
+                                    <td>
+                                        {{ bordereau.service.nom }}
+                                    </td>
+
+                                    <td>
+                                        {{ bordereau.transmis_par.get_full_name|default:bordereau.transmis_par.username }}
+                                    </td>
+
+                                    <td>
+                                        {{ bordereau.lignes.count }}
+                                    </td>
+
+                                    <td>
+                                        {% if bordereau.statut == "RECEPTIONNE" %}
+                                            <span class="badge bg-success">
+                                                Réceptionné
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-warning text-dark">
+                                                En attente de réception
+                                            </span>
+                                        {% endif %}
+                                    </td>
+
+                                    <td class="text-center">
+                                        <a
+                                            href="{% url 'detail_bordereau' bordereau.pk %}"
+                                            class="btn btn-sm btn-outline-primary"
+                                        >
+                                            Consulter
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <h5 class="text-muted">
+                        Aucun bordereau disponible
+                    </h5>
+                    <p class="text-muted mb-0">
+                        Les bordereaux de transmission apparaîtront ici.
+                    </p>
+                </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+    <div class="mt-3">
+        <a href="{% url 'liste_courriers' %}" class="btn btn-outline-secondary">
+            Retour aux courriers
+        </a>
+    </div>
+
+</div>
+{% endblock %}
+\n\n\n==========================================================================================\nFICHIER : templates/courrier/bordereaux/formulaire.html\n==========================================================================================\n
+{% extends "base.html" %}
+
+{% block title %}Nouveau bordereau - GSC{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <div class="mb-4">
+        <h3>Nouveau bordereau de transmission</h3>
+        <p class="text-muted">
+            Regroupez plusieurs courriers destinés à un même service.
+        </p>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-body">
+
+            <form method="post">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                    <div class="alert alert-danger">
+                        {{ form.non_field_errors }}
+                    </div>
+                {% endif %}
+
+                <div class="mb-4">
+                    <label class="form-label fw-bold">
+                        Service destinataire
+                    </label>
+                    {{ form.service }}
+                    {% for error in form.service.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label fw-bold">
+                        Courriers à transmettre
+                    </label>
+
+                    <div class="border rounded p-3">
+                        {% if form.courriers.field.queryset %}
+                            {% for checkbox in form.courriers %}
+                                <div class="form-check mb-2">
+                                    {{ checkbox.tag }}
+                                    <label class="form-check-label" for="{{ checkbox.id_for_label }}">
+                                        {{ checkbox.choice_label }}
+                                    </label>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <p class="text-muted mb-0">
+                                Aucun courrier disponible pour une transmission collective.
+                            </p>
+                        {% endif %}
+                    </div>
+
+                    {% for error in form.courriers.errors %}
+                        <div class="text-danger small mt-2">{{ error }}</div>
+                    {% endfor %}
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label fw-bold">
+                        Instruction de transmission
+                    </label>
+                    {{ form.instruction }}
+                    {% for error in form.instruction.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                </div>
+
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="submit" class="btn btn-primary">
+                        Créer le bordereau
+                    </button>
+
+                    <a href="{% url 'liste_bordereaux' %}" class="btn btn-outline-secondary">
+                        Annuler
+                    </a>
+                </div>
+
+            </form>
+
+        </div>
+    </div>
+
+</div>
+
+<style>
+    #id_service,
+    #id_instruction {
+        display: block;
+        width: 100%;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #ced4da;
+        border-radius: 0.375rem;
+    }
+
+    #id_instruction {
+        min-height: 100px;
+    }
+
+    input[type="checkbox"] {
+        margin-right: 8px;
+    }
+</style>
+{% endblock %}
+\n\n\n==========================================================================================\nFICHIER : templates/courrier/bordereaux/detail.html\n==========================================================================================\n
+{% extends "base.html" %}
+
+{% block title %}Détail du bordereau - GSC{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+        <div>
+            <h3>Bordereau BR-{{ bordereau.pk }}</h3>
+            <p class="text-muted mb-0">
+                Détail de la transmission collective
+            </p>
+        </div>
+
+        <a href="{% url 'liste_bordereaux' %}" class="btn btn-outline-secondary">
+            Retour aux bordereaux
+        </a>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-bold">
+            Informations du bordereau
+        </div>
+
+        <div class="card-body">
+            <div class="row g-3">
+
+                <div class="col-md-4">
+                    <div class="text-muted small">Numéro</div>
+                    <strong>BR-{{ bordereau.pk }}</strong>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="text-muted small">Service destinataire</div>
+                    <strong>{{ bordereau.service.nom }}</strong>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="text-muted small">Date de transmission</div>
+                    <strong>{{ bordereau.date_transmission|date:"d/m/Y H:i" }}</strong>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="text-muted small">Transmis par</div>
+                    <strong>
+                        {{ bordereau.transmis_par.get_full_name|default:bordereau.transmis_par.username }}
+                    </strong>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="text-muted small">Nombre de courriers</div>
+                    <strong>{{ lignes.count }}</strong>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="text-muted small">Statut</div>
+
+                    {% if bordereau.statut == "RECEPTIONNE" %}
+                        <span class="badge bg-success">Réceptionné</span>
+                    {% else %}
+                        <span class="badge bg-warning text-dark">
+                            En attente de réception
+                        </span>
+                    {% endif %}
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-header fw-bold">
+            Courriers contenus dans le bordereau
+        </div>
+
+        <div class="card-body">
+            {% if lignes %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Référence</th>
+                                <th>Date</th>
+                                <th>Expéditeur</th>
+                                <th>Objet</th>
+                                <th>Statut</th>
+                                <th>Consultation</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            {% for ligne in lignes %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ ligne.courrier.reference }}</strong>
+                                    </td>
+
+                                    <td>
+                                        {{ ligne.courrier.date_courrier|date:"d/m/Y" }}
+                                    </td>
+
+                                    <td>{{ ligne.courrier.expediteur }}</td>
+
+                                    <td>{{ ligne.courrier.objet }}</td>
+
+                                    <td>
+                                        {{ ligne.courrier.get_statut_display }}
+                                    </td>
+
+                                    <td>
+                                        <a
+                                            href="{% url 'detail_courrier' ligne.courrier.pk %}"
+                                            class="btn btn-sm btn-outline-primary"
+                                        >
+                                            Voir
+                                        </a>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <p class="text-muted mb-0">
+                    Aucun courrier accessible dans ce bordereau.
+                </p>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if reception %}
+        <div class="card border-success shadow-sm mb-4">
+            <div class="card-header text-success fw-bold">
+                Confirmation de réception
+            </div>
+
+            <div class="card-body">
+                <p>
+                    <strong>Réceptionné par :</strong>
+                    {{ reception.receptionne_par.get_full_name|default:reception.receptionne_par.username }}
+                </p>
+
+                <p>
+                    <strong>Date de réception :</strong>
+                    {{ reception.date_reception|date:"d/m/Y H:i" }}
+                </p>
+
+                <p class="mb-0">
+                    <strong>Observation :</strong>
+                    {{ reception.observation|default:"Aucune observation"|linebreaksbr }}
+                </p>
+            </div>
+        </div>
+    {% endif %}
+
+    {% if peut_receptionner %}
+        <div class="card shadow-sm mb-4">
+            <div class="card-header fw-bold">
+                Confirmer la réception du bordereau
+            </div>
+
+            <div class="card-body">
+                <p>
+                    En confirmant, vous attestez avoir reçu les courriers
+                    figurant sur ce bordereau.
+                </p>
+
+                <form
+                    method="post"
+                    action="{% url 'receptionner_bordereau' bordereau.pk %}"
+                    onsubmit="return confirm('Confirmer la réception de tous les courriers de ce bordereau ?');"
+                >
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="id_observation" class="form-label">
+                            Observation éventuelle
+                        </label>
+
+                        <textarea
+                            name="observation"
+                            id="id_observation"
+                            class="form-control"
+                            rows="4"
+                            placeholder="Observations éventuelles..."
+                        ></textarea>
+                    </div>
+
+                    <button type="submit" class="btn btn-success">
+                        Confirmer la réception
+                    </button>
+                </form>
+            </div>
+        </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+\n\n\n==========================================================================================\nFICHIER : templates/registration/login.html\n==========================================================================================\n
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion | GSC</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #edf2f8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 25px;
+        }
+
+        .login-container {
+            width: 100%;
+            max-width: 950px;
+            min-height: 540px;
+            background: white;
+            border-radius: 18px;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            box-shadow: 0 18px 55px rgba(15, 35, 60, .13);
+        }
+
+        .welcome-panel {
+            background: linear-gradient(145deg, #10243d, #174d79);
+            color: white;
+            padding: 55px 45px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        .brand {
+            font-size: 52px;
+            font-weight: 800;
+            letter-spacing: 4px;
+            margin-bottom: 5px;
+        }
+
+        .brand-line {
+            width: 55px;
+            height: 4px;
+            background: #36b9e8;
+            border-radius: 5px;
+            margin: 18px 0 28px;
+        }
+
+        .welcome-panel h2 {
+            font-size: 27px;
+            font-weight: 700;
+            line-height: 1.4;
+            margin: 0;
+        }
+
+        .form-panel {
+            padding: 65px 55px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .form-panel h2 {
+            color: #172b45;
+            font-weight: 750;
+            font-size: 27px;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #8290a2;
+            margin-bottom: 35px;
+            font-size: 14px;
+        }
+
+        .form-label {
+            color: #34445a;
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .form-control {
+            height: 49px;
+            border: 1px solid #dce3ec;
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-size: 14px;
+        }
+
+        .form-control:focus {
+            border-color: #1976d2;
+            box-shadow: 0 0 0 3px rgba(25, 118, 210, .12);
+        }
+
+        .login-btn {
+            height: 49px;
+            background: #1769d2;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            width: 100%;
+            margin-top: 12px;
+            transition: .2s;
+        }
+
+        .login-btn:hover {
+            background: #1054ad;
+        }
+
+        .security-note {
+            text-align: center;
+            color: #91a0b1;
+            font-size: 12px;
+            margin-top: 28px;
+        }
+
+        .error-message {
+            background: #fff0f0;
+            border: 1px solid #ffd1d1;
+            color: #b42318;
+            padding: 11px;
+            border-radius: 7px;
+            font-size: 13px;
+            margin-bottom: 18px;
+        }
+
+        @media (max-width: 700px) {
+            .login-container {
+                grid-template-columns: 1fr;
+            }
+
+            .welcome-panel {
+                padding: 30px;
+                min-height: 200px;
+            }
+
+            .welcome-panel h2 {
+                font-size: 22px;
+            }
+
+            .form-panel {
+                padding: 38px 28px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="login-container">
+
+    <!-- IDENTITE GSC -->
+    <div class="welcome-panel">
+        <div class="brand">GSC</div>
+        <div class="brand-line"></div>
+        <h2>Gestion Suivi de Courrier</h2>
+    </div>
+
+    <!-- FORMULAIRE DE CONNEXION -->
+    <div class="form-panel">
+
+        <h2>Bienvenue !</h2>
+        <p class="subtitle">Connectez-vous pour accéder à votre espace.</p>
+
+        {% if form.errors %}
+            <div class="error-message">
+                Identifiant ou mot de passe incorrect. Veuillez réessayer.
+            </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'login' %}">
+            {% csrf_token %}
+
+            {% if next %}
+                <input type="hidden" name="next" value="{{ next }}">
+            {% endif %}
+
+            <div class="mb-4">
+                <label for="id_username" class="form-label">
+                    Nom d'utilisateur
+                </label>
+                <input
+                    type="text"
+                    name="username"
+                    id="id_username"
+                    class="form-control"
+                    placeholder="Saisissez votre identifiant"
+                    autocomplete="username"
+                    required
+                    autofocus
+                >
+            </div>
+
+            <div class="mb-3">
+                <label for="id_password" class="form-label">
+                    Mot de passe
+                </label>
+                <input
+                    type="password"
+                    name="password"
+                    id="id_password"
+                    class="form-control"
+                    placeholder="Saisissez votre mot de passe"
+                    autocomplete="current-password"
+                    required
+                >
+            </div>
+
+            <button type="submit" class="login-btn">
+                Se connecter
+            </button>
+
+        </form>
+
+        <div class="security-note">
+            🔒 Accès réservé aux utilisateurs autorisés.
+        </div>
+
+    </div>
+
+</div>
+
+</body>
+</html>

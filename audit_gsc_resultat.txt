@@ -1,0 +1,145 @@
+========================================================================
+GSC - AUDIT GLOBAL EN LECTURE SEULE
+Projet : D:\Downloads\GSC
+========================================================================
+
+------------------------------------------------------------------------
+1. CONFIGURATION ET CONTROLES DJANGO
+------------------------------------------------------------------------
+Django : 5.2.19
+Base configurée : mssql
+Fichier settings : config.settings
+[OK] Vérifications Django : 0 avertissement(s)/erreur(s), 0 erreur(s) bloquante(s)
+
+------------------------------------------------------------------------
+2. BASE SQL SERVER ET MIGRATIONS
+------------------------------------------------------------------------
+Connexion SQL : réussie
+[OK] Migrations : Aucune migration en attente
+
+------------------------------------------------------------------------
+3. MODELES ET DONNEES EN BASE
+------------------------------------------------------------------------
+[OK] Modèle Service : 1 enregistrement(s)
+[OK] Modèle ResponsableService : 1 enregistrement(s)
+[OK] Modèle CategorieCourrier : 0 enregistrement(s)
+[OK] Modèle Courrier : 1 enregistrement(s)
+[OK] Modèle Affectation : 1 enregistrement(s)
+[OK] Modèle DelegationTransmission : 0 enregistrement(s)
+[OK] Modèle RetourCourrier : 0 enregistrement(s)
+[OK] Modèle PieceJointe : 0 enregistrement(s)
+[OK] Modèle BordereauTransmission : 0 enregistrement(s)
+[OK] Modèle LigneBordereau : 0 enregistrement(s)
+[OK] Modèle ReceptionBordereau : 0 enregistrement(s)
+[OK] Modèle Historique : 1 enregistrement(s)
+[OK] Modèle AutorisationConfidentialite : 0 enregistrement(s)
+[OK] Modèle RegleOrientation : 0 enregistrement(s)
+[OK] Modèle JournalAccesConfidentiel : 0 enregistrement(s)
+[OK] Modèle ParametreGSC : 0 enregistrement(s)
+
+------------------------------------------------------------------------
+4. UTILISATEURS, GROUPES ET PROFILS
+------------------------------------------------------------------------
+Groupes présents : Accueil, Administrateur, Agent, Direction, Responsable de service, Secrétariat
+ - admin_gsc | profil=ADMIN | groupes=(sans groupe) | staff=True | superuser=True
+ - test_accueil | profil=ACCUEIL | groupes=Accueil | staff=False | superuser=False
+ - test_admin | profil=ADMIN | groupes=(sans groupe) | staff=True | superuser=True
+ - test_agent | profil=AGENT | groupes=Agent | staff=False | superuser=False
+ - test_direction | profil=DIRECTION | groupes=Direction | staff=False | superuser=False
+ - test_responsable | profil=RESPONSABLE | groupes=Responsable de service | staff=False | superuser=False
+ - test_secretariat | profil=SECRETARIAT | groupes=Secrétariat | staff=False | superuser=False
+[OK] Comptes actifs : 7 compte(s)
+
+------------------------------------------------------------------------
+5. CONFIGURATION DES STRUCTURES ET CATEGORIES
+------------------------------------------------------------------------
+Structures : 1 total / 1 actives
+ - SERVICE TEST GSC | type=SERVICE | parent=None | responsable_ancien=test_responsable | responsables=['test_responsable'] | actif=True
+[OK] Structures actives : 1 structure(s) active(s)
+Catégories : 0 total / 0 actives
+[A VERIFIER] Catégories actives : 0 catégorie(s) active(s)
+
+------------------------------------------------------------------------
+6. ETAT DES COURRIERS ET AFFECTATIONS
+------------------------------------------------------------------------
+Courriers total : 1
+Sens : [('ENTRANT', 1)]
+Statuts : [('TRANSMIS', 1)]
+Confidentialité : [('NORMALE', 1)]
+Affectations actives : 1
+Affectations service non confirmées : 1
+Bordereaux : 0
+Retours non traités : 0
+
+------------------------------------------------------------------------
+7. ROUTES IMPORTANTES
+------------------------------------------------------------------------
+[OK] Route dashboard_interne
+[OK] Route liste_courriers
+[OK] Route nouveau_courrier
+[OK] Route detail_courrier
+[OK] Route modifier_courrier
+[OK] Route transmettre_courrier
+[OK] Route confirmer_reception
+[OK] Route affecter_agent
+[OK] Route traiter_courrier
+[OK] Route retourner_courrier
+[OK] Route cloturer_courrier
+[OK] Route reouvrir_courrier
+[A VERIFIER] Route liste_bordereaux : nom absent ou paramètres incompatibles
+[OK] Route creer_bordereau
+[OK] Route detail_bordereau
+[OK] Route receptionner_bordereau
+[OK] Route exporter_courriers_excel
+[OK] Route exporter_courriers_pdf
+[OK] Route telecharger_document_courrier
+[OK] Route telecharger_piece_jointe
+
+------------------------------------------------------------------------
+8. TEMPLATES ET FICHIERS DE L'APPLICATION
+------------------------------------------------------------------------
+[OK] Template base.html : présent
+[OK] Template registration/login.html : présent
+[OK] Template courrier/dashboard.html : présent
+[OK] Template courrier/liste.html : présent
+[OK] Template courrier/detail.html : présent
+[OK] Template courrier/formulaire.html : présent
+[OK] Template courrier/confirmation_cloture.html : présent
+[OK] Template courrier/autorisations_confidentielles.html : présent
+[OK] Template courrier/bordereaux/liste.html : présent
+[OK] Template courrier/bordereaux/formulaire.html : présent
+[OK] Template courrier/bordereaux/detail.html : présent
+[OK] Fichier courrier/views.py : 62199 octets
+[OK] Fichier courrier/permissions.py : 23754 octets
+[OK] Fichier courrier/forms.py : 20271 octets
+[OK] Fichier courrier/urls.py : 4564 octets
+[OK] Fichier courrier/bordereaux.py : 20506 octets
+[OK] Fichier courrier/exports.py : 12580 octets
+[OK] Fichier courrier/models.py : 30850 octets
+[OK] Fichier courrier/admin.py : 16026 octets
+
+------------------------------------------------------------------------
+9. CONTROLES CIBLES DU CODE
+------------------------------------------------------------------------
+[OK] Confirmation réception : tous les marqueurs trouvés
+[OK] Affectation agents : tous les marqueurs trouvés
+[OK] Traitement : tous les marqueurs trouvés
+[OK] Récupération courrier clôturé : tous les marqueurs trouvés
+[OK] Permissions affectation : tous les marqueurs trouvés
+[OK] Permissions traitement : tous les marqueurs trouvés
+[OK] Bordereaux et réception : tous les marqueurs trouvés
+[OK] Exports Excel/PDF : tous les marqueurs trouvés
+[OK] Téléchargement sécurisé du document principal : URL Django sécurisée
+[OK] Téléchargement sécurisé des pièces jointes : URL Django sécurisée
+
+------------------------------------------------------------------------
+10. SYNTHESE
+------------------------------------------------------------------------
+Points à examiner : 2
+ - Catégories actives
+ - Route liste_bordereaux
+
+Cet audit ne modifie aucune donnée et ne lance aucune migration.
+Il vérifie l'état ACTUEL de ce dossier et de sa base, pas seulement les anciennes sauvegardes.
+Certaines règles métier (droits réels, confidentialité, réception avant affectation)
+nécessitent encore une revue fonctionnelle et des tests avec comptes de chaque rôle.
